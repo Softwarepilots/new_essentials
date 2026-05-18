@@ -487,9 +487,15 @@ def check_entry_lock(request):
         current_hour = datetime.now().hour
         entry_type = 'morning' if current_hour < 12 else 'evening'
         
-        print(f"[ENTRY_LOCK_CHECK] Checking lock for site={site_id}, date={entry_date}, type={entry_type}, user={user_id}")
-        
-        # Check if any entries exist for this site/date
+        user_role = request.user.get('role')
+        print(f"[ENTRY_LOCK_CHECK] Checking lock for site={site_id}, date={entry_date}, type={entry_type}, user={user_id}, role={user_role}")
+
+        if not user_role:
+            return Response({'error': 'User role not found in token'},
+                          status=status.HTTP_401_UNAUTHORIZED)
+
+        # Check if any entries exist for this site/date from DIFFERENT ROLES
+        # We only care about locks from other roles, not other users in the same role
         entries = fetch_all("""
             SELECT
                 le.id,
@@ -498,7 +504,8 @@ def check_entry_lock(request):
                 le.entry_time,
                 le.labour_type,
                 le.labour_count,
-                le.entry_type
+                le.entry_type,
+                le.submitted_by_role
             FROM labour_entries le
             LEFT JOIN users u ON le.supervisor_id = u.id
             WHERE le.site_id = %s
@@ -508,49 +515,50 @@ def check_entry_lock(request):
         
         if not entries:
             # No entries - site is available
+            print(f"[ENTRY_LOCK_CHECK] No entries found - site available")
             return Response({
                 'is_locked': False,
                 'can_enter': True,
                 'entries': []
             }, status=status.HTTP_200_OK)
-        
-        # Check if current user has any entries
-        user_entries = [e for e in entries if str(e['supervisor_id']) == str(user_id)]
-        other_entries = [e for e in entries if str(e['supervisor_id']) != str(user_id)]
-        
-        if other_entries:
-            # Another supervisor has entered data
-            first_other = other_entries[0]
-            entry_time_str = first_other['entry_time'].strftime("%I:%M %p") if first_other.get('entry_time') else 'earlier'
-            
+
+        # Check for entries from DIFFERENT ROLES (not different users)
+        # Supervisor and Site Engineer should be able to submit separately
+        role_entries = [e for e in entries if e.get('submitted_by_role') == user_role]
+        different_role_entries = [e for e in entries if e.get('submitted_by_role') and e.get('submitted_by_role') != user_role]
+
+        print(f"[ENTRY_LOCK_CHECK] Found {len(entries)} entries: {len(role_entries)} from same role, {len(different_role_entries)} from different roles")
+
+        if different_role_entries:
+            # Different role has entered data - do NOT lock (both roles can submit separately)
+            print(f"[ENTRY_LOCK_CHECK] Different role found but allowing entry - roles should be separate")
             return Response({
-                'is_locked': True,
-                'locked_by': first_other['supervisor_name'],
-                'locked_at': entry_time_str,
-                'can_enter': False,
-                'can_view': True,
+                'is_locked': False,
+                'can_enter': True,
                 'entries': [
                     {
                         'labour_type': e['labour_type'],
                         'labour_count': e['labour_count'],
-                        'entry_type': e.get('entry_type', 'unknown')
+                        'entry_type': e.get('entry_type', 'unknown'),
+                        'submitted_by_role': e.get('submitted_by_role', 'Unknown')
                     }
-                    for e in other_entries
+                    for e in different_role_entries
                 ]
             }, status=status.HTTP_200_OK)
-        
-        # Only current user has entries - they can continue
+
+        # Only same-role or no entries - current user can continue
+        print(f"[ENTRY_LOCK_CHECK] Only same-role entries found or none - user can continue")
         return Response({
             'is_locked': False,
             'can_enter': True,
-            'has_existing_entries': True,
+            'has_existing_entries': len(role_entries) > 0,
             'entries': [
                 {
                     'labour_type': e['labour_type'],
                     'labour_count': e['labour_count'],
                     'entry_type': e.get('entry_type', 'unknown')
                 }
-                for e in user_entries
+                for e in role_entries
             ]
         }, status=status.HTTP_200_OK)
         

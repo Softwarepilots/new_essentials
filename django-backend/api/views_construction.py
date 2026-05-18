@@ -2202,11 +2202,10 @@ def get_entries_by_date(request):
                           status=status.HTTP_400_BAD_REQUEST)
         
         # Build WHERE clause based on user role
-        # All roles see all entries for the site/date
-        # The Flutter app handles the lockedByOther detection client-side
-        user_filter = ""
-        labour_params = (site_id, entry_date)
-        print(f"🔍 [ENTRIES_BY_DATE] Loading all entries for site (role: {user_role})")
+        # Only show entries submitted by the current user
+        user_filter = " AND l.supervisor_id = %s"
+        labour_params = (site_id, entry_date, user_id)
+        print(f"🔍 [ENTRIES_BY_DATE] Loading entries for site, user={user_id} (role: {user_role})")
         
         # Get labour entries for this site and date
         labour_query = f"""
@@ -2239,9 +2238,9 @@ def get_entries_by_date(request):
         labour_entries = fetch_all(labour_query, labour_params)
         print(f"🔍 [ENTRIES_BY_DATE] Returned {len(labour_entries)} labour entries")
         
-        # Get material entries for this site and date (all supervisors — shared view)
+        # Get material entries for this site and date for current supervisor only
         material_query = """
-            SELECT 
+            SELECT
                 m.id,
                 m.material_type,
                 m.quantity_used as quantity,
@@ -2251,12 +2250,12 @@ def get_entries_by_date(request):
                 0 as extra_cost,
                 m.notes as extra_cost_notes
             FROM material_usage m
-            WHERE m.site_id = %s AND m.usage_date = %s
+            WHERE m.site_id = %s AND m.usage_date = %s AND m.supervisor_id = %s
             ORDER BY m.created_at DESC
         """
-        material_entries = fetch_all(material_query, (site_id, entry_date))
+        material_entries = fetch_all(material_query, (site_id, entry_date, user_id))
         
-        # Check if material already submitted today for this site (any supervisor)
+        # Check if current supervisor already submitted material today for this site
         material_submitted_today = len(material_entries) > 0
         
         # Get photo count for this site, date, and supervisor
@@ -2267,17 +2266,18 @@ def get_entries_by_date(request):
         """, (site_id, entry_date, user_id))
         photo_count = photo_count_result['count'] if photo_count_result else 0
         
-        # Check if any site engineer submitted today for this site
-        has_site_engineer_entry = any(
-            (e.get('submitted_by_role') or '').lower() == 'site engineer'
-            for e in labour_entries
-        )
-        # Name of the site engineer who submitted (for lock banner)
-        site_engineer_name = next(
-            (e.get('supervisor_name') for e in labour_entries
-             if (e.get('submitted_by_role') or '').lower() == 'site engineer'),
-            None
-        )
+        # Check if any site engineer submitted entries for this site today
+        # (separate from current user's entries, for lock detection)
+        site_engineer_check = fetch_one("""
+            SELECT DISTINCT
+                COALESCE(u.full_name, u.phone) as supervisor_name
+            FROM labour_entries le
+            LEFT JOIN users u ON le.supervisor_id = u.id
+            WHERE le.site_id = %s AND le.entry_date = %s AND le.submitted_by_role = 'Site Engineer'
+            LIMIT 1
+        """, (site_id, entry_date))
+        has_site_engineer_entry = site_engineer_check is not None
+        site_engineer_name = site_engineer_check['supervisor_name'] if site_engineer_check else None
         
         return Response({
             'labour_entries': [

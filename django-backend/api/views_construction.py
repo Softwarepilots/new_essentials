@@ -270,6 +270,7 @@ def submit_labour_count(request):
                 'error': 'User role not found in authentication token. Please log out and log in again.',
             }, status=status.HTTP_401_UNAUTHORIZED)
 
+        print(f"[LABOUR AUTH] user_id={user_id}, jwt_role={user_role}")
         logger.warning(f"[LABOUR AUTH] user_id={user_id}, jwt_role={user_role}")
 
         site_id     = request.data.get('site_id', '').strip()
@@ -327,6 +328,8 @@ def submit_labour_count(request):
         # ── Duplicate / lock check ────────────────────────────────────────
         # One entry per (site, date, entry_type, labour_type, submitted_by_role) per user.
         # This allows supervisor and site engineer to submit same labour type separately.
+        print(f"[LABOUR] Duplicate check: site={site_id}, date={entry_date}, "
+              f"type={entry_type}, labour={labour_type}, role={user_role}")
         logger.warning(f"[LABOUR] Duplicate check: site={site_id}, date={entry_date}, "
                       f"type={entry_type}, labour={labour_type}, role={user_role}")
 
@@ -346,10 +349,15 @@ def submit_labour_count(request):
             LIMIT 1
         """, (site_id, entry_date, entry_type, labour_type, user_role))
 
+        print(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
         logger.warning(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
         if existing:
+            print(f"[LABOUR] Existing: id={existing['id']}, role={existing['submitted_by_role']}, "
+                  f"supervisor={existing['supervisor_id']}")
             logger.warning(f"[LABOUR] Existing: id={existing['id']}, role={existing['submitted_by_role']}, "
                           f"supervisor={existing['supervisor_id']}")
+            print(f"[LABOUR] Role Match Debug: seeking_role={user_role}, found_role={existing['submitted_by_role']}, "
+                  f"roles_match={user_role == existing['submitted_by_role']}")
             logger.warning(f"[LABOUR] Role Match Debug: seeking_role={user_role}, found_role={existing['submitted_by_role']}, "
                           f"roles_match={user_role == existing['submitted_by_role']}")
 

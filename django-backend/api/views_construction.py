@@ -528,6 +528,8 @@ def check_entry_lock(request):
         different_role_entries = [e for e in entries if e.get('submitted_by_role') and e.get('submitted_by_role') != user_role]
 
         print(f"[ENTRY_LOCK_CHECK] Found {len(entries)} entries: {len(role_entries)} from same role, {len(different_role_entries)} from different roles")
+        for e in entries:
+            print(f"  - Entry: labour_type={e['labour_type']}, submitted_by_role={e.get('submitted_by_role')}, supervisor_id={e['supervisor_id']}")
 
         if different_role_entries:
             # Different role has entered data - do NOT lock (both roles can submit separately)

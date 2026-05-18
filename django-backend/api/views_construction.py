@@ -258,8 +258,19 @@ def submit_labour_count(request):
     }
 
     try:
+        import logging
+        logger = logging.getLogger('django')
+
         user_id   = request.user['user_id']
-        user_role = request.user.get('role', 'Supervisor')
+        user_role = request.user.get('role')
+
+        if not user_role:
+            logger.error(f"[LABOUR AUTH CRITICAL] user_id={user_id} has no role in JWT token!")
+            return Response({
+                'error': 'User role not found in authentication token. Please log out and log in again.',
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        logger.warning(f"[LABOUR AUTH] user_id={user_id}, jwt_role={user_role}")
 
         site_id     = request.data.get('site_id', '').strip()
         labour_type = request.data.get('labour_type', 'General').strip()
@@ -310,14 +321,14 @@ def submit_labour_count(request):
         entry_type   = 'morning' if entry_hour < 12 else 'evening'
         day_of_week  = get_day_of_week(ist_dt)
 
-        print(f"[LABOUR] site={site_id} date={entry_date} type={entry_type} "
-              f"labour_type={labour_type} count={labour_count} role={user_role}")
+        logger.warning(f"[LABOUR] site={site_id} date={entry_date} type={entry_type} "
+                      f"labour_type={labour_type} count={labour_count} role={user_role}")
 
         # ── Duplicate / lock check ────────────────────────────────────────
         # One entry per (site, date, entry_type, labour_type, submitted_by_role) per user.
         # This allows supervisor and site engineer to submit same labour type separately.
-        print(f"[LABOUR] Checking duplicate for: site={site_id}, date={entry_date}, "
-              f"type={entry_type}, labour={labour_type}, role={user_role}")
+        logger.warning(f"[LABOUR] Duplicate check: site={site_id}, date={entry_date}, "
+                      f"type={entry_type}, labour={labour_type}, role={user_role}")
 
         existing = fetch_one("""
             SELECT le.id,
@@ -335,10 +346,12 @@ def submit_labour_count(request):
             LIMIT 1
         """, (site_id, entry_date, entry_type, labour_type, user_role))
 
-        print(f"[LABOUR] Duplicate check result: {'FOUND' if existing else 'NOT FOUND'}")
+        logger.warning(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
         if existing:
-            print(f"[LABOUR] Existing entry: id={existing['id']}, role={existing['submitted_by_role']}, "
-                  f"supervisor_id={existing['supervisor_id']}")
+            logger.warning(f"[LABOUR] Existing: id={existing['id']}, role={existing['submitted_by_role']}, "
+                          f"supervisor={existing['supervisor_id']}")
+            logger.warning(f"[LABOUR] Role Match Debug: seeking_role={user_role}, found_role={existing['submitted_by_role']}, "
+                          f"roles_match={user_role == existing['submitted_by_role']}")
 
         if existing:
             if str(existing['supervisor_id']) == str(user_id):

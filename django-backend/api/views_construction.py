@@ -522,18 +522,41 @@ def check_entry_lock(request):
                 'entries': []
             }, status=status.HTTP_200_OK)
 
-        # Check for entries from DIFFERENT ROLES (not different users)
-        # Supervisor and Site Engineer should be able to submit separately
+        # Check for entries from SAME ROLE vs DIFFERENT ROLES
+        # Lock if SAME role already submitted (only one role per site/date)
+        # Allow if only DIFFERENT role submitted
         role_entries = [e for e in entries if e.get('submitted_by_role') == user_role]
         different_role_entries = [e for e in entries if e.get('submitted_by_role') and e.get('submitted_by_role') != user_role]
 
-        print(f"[ENTRY_LOCK_CHECK] Found {len(entries)} entries: {len(role_entries)} from same role, {len(different_role_entries)} from different roles")
+        print(f"[ENTRY_LOCK_CHECK] Found {len(entries)} entries: {len(role_entries)} from same role={user_role}, {len(different_role_entries)} from different roles")
         for e in entries:
             print(f"  - Entry: labour_type={e['labour_type']}, submitted_by_role={e.get('submitted_by_role')}, supervisor_id={e['supervisor_id']}")
 
+        # If same role has already entered data - LOCK (prevent another user of same role)
+        if role_entries:
+            first_entry = role_entries[0]
+            entry_time_str = first_entry['entry_time'].strftime("%I:%M %p") if first_entry.get('entry_time') else 'earlier'
+            print(f"[ENTRY_LOCK_CHECK] LOCKED - Same role {user_role} already has entries")
+            return Response({
+                'is_locked': True,
+                'locked_by': first_entry.get('supervisor_name', 'Another ' + user_role),
+                'locked_at': entry_time_str,
+                'can_enter': False,
+                'can_view': True,
+                'entries': [
+                    {
+                        'labour_type': e['labour_type'],
+                        'labour_count': e['labour_count'],
+                        'entry_type': e.get('entry_type', 'unknown'),
+                        'submitted_by_role': e.get('submitted_by_role')
+                    }
+                    for e in role_entries
+                ]
+            }, status=status.HTTP_200_OK)
+
+        # Different role entries exist but same role hasn't - allow this role to submit
         if different_role_entries:
-            # Different role has entered data - do NOT lock (both roles can submit separately)
-            print(f"[ENTRY_LOCK_CHECK] Different role found but allowing entry - roles should be separate")
+            print(f"[ENTRY_LOCK_CHECK] ALLOWED - Different role has entries, but {user_role} can submit separately")
             return Response({
                 'is_locked': False,
                 'can_enter': True,
@@ -542,26 +565,18 @@ def check_entry_lock(request):
                         'labour_type': e['labour_type'],
                         'labour_count': e['labour_count'],
                         'entry_type': e.get('entry_type', 'unknown'),
-                        'submitted_by_role': e.get('submitted_by_role', 'Unknown')
+                        'submitted_by_role': e.get('submitted_by_role')
                     }
                     for e in different_role_entries
                 ]
             }, status=status.HTTP_200_OK)
 
-        # Only same-role or no entries - current user can continue
-        print(f"[ENTRY_LOCK_CHECK] Only same-role entries found or none - user can continue")
+        # No entries at all - allow
+        print(f"[ENTRY_LOCK_CHECK] ALLOWED - No entries found")
         return Response({
             'is_locked': False,
             'can_enter': True,
-            'has_existing_entries': len(role_entries) > 0,
-            'entries': [
-                {
-                    'labour_type': e['labour_type'],
-                    'labour_count': e['labour_count'],
-                    'entry_type': e.get('entry_type', 'unknown')
-                }
-                for e in role_entries
-            ]
+            'entries': []
         }, status=status.HTTP_200_OK)
         
     except Exception as e:

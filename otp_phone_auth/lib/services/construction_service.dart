@@ -392,6 +392,45 @@ class ConstructionService {
     }
   }
 
+  Future<Map<String, dynamic>> submitExtraCost({
+    required String siteId,
+    required double amount,
+    required String description,
+    DateTime? entryDate,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final now = DateTime.now();
+      final istNow = now.add(const Duration(hours: 5, minutes: 30));
+
+      final body = {
+        'site_id': siteId,
+        'amount': amount,
+        'description': description,
+        'entry_date': (entryDate ?? istNow).toIso8601String().split('T')[0],
+        'entry_time': istNow.toIso8601String(),
+      };
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/construction/extra-cost/'),
+        headers: headers,
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('✅ [EXTRA_COST] Submitted successfully');
+        return {'success': true, 'data': data};
+      } else {
+        print('❌ [EXTRA_COST] Failed: ${response.body}');
+        return {'success': false, 'error': 'Failed to submit extra cost'};
+      }
+    } catch (e) {
+      print('❌ [EXTRA_COST] Exception: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
   // TEST METHOD - Remove after debugging
   Future<Map<String, dynamic>> testMaterialBalance({
     required String siteId,
@@ -865,8 +904,10 @@ class ConstructionService {
         final data = json.decode(response.body);
         final labourCount = (data['labour_entries'] as List?)?.length ?? 0;
         final materialCount = (data['material_entries'] as List?)?.length ?? 0;
+        final extraCostsCount = (data['extra_costs'] as List?)?.length ?? 0;
         print('✅ [ACCOUNTANT] Labour entries: $labourCount');
         print('✅ [ACCOUNTANT] Material entries: $materialCount');
+        print('✅ [ACCOUNTANT] Extra costs: $extraCostsCount');
 
         if (labourCount > 0) {
           print(
@@ -878,7 +919,7 @@ class ConstructionService {
       } else {
         print('❌ [ACCOUNTANT] Error response: ${response.body}');
       }
-      return {'labour_entries': [], 'material_entries': []};
+      return {'labour_entries': [], 'material_entries': [], 'extra_costs': []};
     } catch (e) {
       print('❌ [ACCOUNTANT] Exception: $e');
       return {'labour_entries': [], 'material_entries': []};

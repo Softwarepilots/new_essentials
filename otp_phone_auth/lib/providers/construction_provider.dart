@@ -34,6 +34,7 @@ class ConstructionProvider with ChangeNotifier {
   List<Map<String, dynamic>> _materialEntries = [];
   List<Map<String, dynamic>> _accountantLabourEntries = [];
   List<Map<String, dynamic>> _accountantMaterialEntries = [];
+  List<Map<String, dynamic>> _accountantExtraCosts = [];
   List<Map<String, dynamic>> _accountantPhotos = [];
   List<Map<String, dynamic>> _supervisorPhotos = [];
   List<Map<String, dynamic>> _architectDocuments = [];
@@ -56,6 +57,7 @@ class ConstructionProvider with ChangeNotifier {
   List<Map<String, dynamic>> get materialEntries => _materialEntries;
   List<Map<String, dynamic>> get accountantLabourEntries => _accountantLabourEntries;
   List<Map<String, dynamic>> get accountantMaterialEntries => _accountantMaterialEntries;
+  List<Map<String, dynamic>> get accountantExtraCosts => _accountantExtraCosts;
   List<Map<String, dynamic>> get accountantPhotos => _accountantPhotos;
   List<Map<String, dynamic>> get supervisorPhotos => _supervisorPhotos;
   List<Map<String, dynamic>> get architectDocuments => _architectDocuments;
@@ -284,9 +286,11 @@ class ConstructionProvider with ChangeNotifier {
       
       _accountantLabourEntries = List<Map<String, dynamic>>.from(result['labour_entries'] ?? []);
       _accountantMaterialEntries = List<Map<String, dynamic>>.from(result['material_entries'] ?? []);
-      
+      _accountantExtraCosts = List<Map<String, dynamic>>.from(result['extra_costs'] ?? []);
+
       print('🔍 [ACCOUNTANT PROVIDER] Loaded ${_accountantLabourEntries.length} labour entries');
       print('🔍 [ACCOUNTANT PROVIDER] Loaded ${_accountantMaterialEntries.length} material entries');
+      print('🔍 [ACCOUNTANT PROVIDER] Loaded ${_accountantExtraCosts.length} extra costs');
       
       // Debug: Check for Lakshmi data specifically
       final lakshmiLabour = _accountantLabourEntries.where((entry) => 
@@ -373,6 +377,7 @@ class ConstructionProvider with ChangeNotifier {
     _supervisorPhotosLoaded = false;
     _accountantLabourEntries.clear();
     _accountantMaterialEntries.clear();
+    _accountantExtraCosts.clear();
     _accountantPhotos.clear();
     _supervisorPhotos.clear();
     notifyListeners();
@@ -573,6 +578,7 @@ class ConstructionProvider with ChangeNotifier {
     _materialEntries = [];
     _accountantLabourEntries = [];
     _accountantMaterialEntries = [];
+    _accountantExtraCosts = [];
     _accountantPhotos = [];
     _supervisorPhotos = [];
     _architectDocuments = [];

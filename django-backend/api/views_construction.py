@@ -592,27 +592,33 @@ def submit_material_balance(request):
     Supervisor: Submit material balance with custom local time
     Accepts custom_datetime from client to use local device time
     """
+    import sys
+    print(f'🔵 [MATERIAL] Request received - Method: {request.method}, Path: {request.path}')
+    print(f'🔵 [MATERIAL] User authenticated: {hasattr(request, "user")}')
+
     try:
         # Import time utilities
         from .time_utils import is_within_entry_hours, get_entry_metadata, get_entry_time_status, get_day_of_week
         from datetime import datetime
         import pytz
-        import sys
-        
+
         # Ensure stdout uses UTF-8 encoding
         if sys.stdout.encoding != 'utf-8':
             sys.stdout.reconfigure(encoding='utf-8')
-        
+
+        print(f'🔵 [MATERIAL] About to access request.data')
+        request_data = request.data
+        print(f'📦 [MATERIAL] Request data: {request_data}')
+
         user_id = request.user['user_id']
-        site_id = request.data.get('site_id')
-        materials = request.data.get('materials', [])  # List of {material_type, quantity, unit}
-        extra_cost = request.data.get('extra_cost', 0)
-        extra_cost_notes = request.data.get('extra_cost_notes', '')
+        site_id = request_data.get('site_id')
+        materials = request_data.get('materials', [])  # List of {material_type, quantity, unit}
+        extra_cost = request_data.get('extra_cost', 0)
+        extra_cost_notes = request_data.get('extra_cost_notes', '')
 
         # Get custom date/time from client (local device time)
-        custom_datetime_str = request.data.get('custom_datetime')
+        custom_datetime_str = request_data.get('custom_datetime')
 
-        print(f'📦 [MATERIAL] Request data: {request.data}')
         print(f'📦 [MATERIAL] site_id: {site_id}')
         print(f'📦 [MATERIAL] materials: {materials}')
         print(f'📦 [MATERIAL] materials type: {type(materials)}')
@@ -703,8 +709,10 @@ def submit_material_balance(request):
         
     except Exception as e:
         # Ensure error message is safe to encode
+        import traceback
         error_msg = str(e).encode('utf-8', errors='replace').decode('utf-8')
-        print(f"Error in submit_material_balance: {error_msg}")
+        print(f"❌ [MATERIAL] Error in submit_material_balance: {error_msg}")
+        print(f"❌ [MATERIAL] Traceback: {traceback.format_exc()}")
         return Response({'error': error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

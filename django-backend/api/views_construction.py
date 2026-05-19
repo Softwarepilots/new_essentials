@@ -585,8 +585,6 @@ def check_entry_lock(request):
 
 
 @api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
 def submit_material_balance(request):
     """
     Supervisor: Submit material balance with custom local time

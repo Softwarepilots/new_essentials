@@ -15,17 +15,15 @@ import uuid
 import pytz
 
 
-# TEST ENDPOINT - identical pattern to working admin endpoint
+# TEST ENDPOINT - NO AUTHENTICATION to isolate the issue
 @api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
 def test_material_balance(request):
-    """Test endpoint with admin pattern"""
+    """Test endpoint without authentication"""
     print(f'✅ [TEST] Test endpoint called!')
-    user_id = request.user.user_data.get('user_id')
     site_id = request.data.get('site_id')
-    print(f'✅ [TEST] user_id: {user_id}, site_id: {site_id}')
-    return Response({'message': 'Test endpoint works!', 'user_id': user_id, 'site_id': site_id}, status=status.HTTP_200_OK)
+    materials = request.data.get('materials', [])
+    print(f'✅ [TEST] site_id: {site_id}, materials count: {len(materials)}')
+    return Response({'message': 'Test endpoint works!', 'received_site_id': site_id, 'received_materials': materials}, status=status.HTTP_200_OK)
 
 
 # ============================================

@@ -608,12 +608,19 @@ def submit_material_balance(request):
         materials = request.data.get('materials', [])  # List of {material_type, quantity, unit}
         extra_cost = request.data.get('extra_cost', 0)
         extra_cost_notes = request.data.get('extra_cost_notes', '')
-        
+
         # Get custom date/time from client (local device time)
         custom_datetime_str = request.data.get('custom_datetime')
-        
+
+        print(f'📦 [MATERIAL] Request data: {request.data}')
+        print(f'📦 [MATERIAL] site_id: {site_id}')
+        print(f'📦 [MATERIAL] materials: {materials}')
+        print(f'📦 [MATERIAL] materials type: {type(materials)}')
+        print(f'📦 [MATERIAL] materials is empty: {not materials}')
+
         if not site_id or not materials:
-            return Response({'error': 'site_id and materials are required'}, 
+            print(f'❌ [MATERIAL] Validation failed - site_id: {bool(site_id)}, materials: {bool(materials)}')
+            return Response({'error': 'site_id and materials are required'},
                           status=status.HTTP_400_BAD_REQUEST)
         
         # Use custom date/time if provided, otherwise use current IST time

@@ -3658,12 +3658,17 @@ def submit_extra_cost(request):
         
         # Insert extra cost
         extra_cost_id = str(uuid.uuid4())
-        execute_query("""
-            INSERT INTO extra_works 
-            (id, site_id, description, amount, notes, uploaded_by, uploaded_at, payment_status)
-            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'PENDING')
-        """, (extra_cost_id, site_id, description, amount, notes, user_id))
-        
+        result = execute_query("""
+            INSERT INTO extra_works
+            (id, site_id, description, amount)
+            VALUES (%s, %s, %s, %s)
+        """, (extra_cost_id, site_id, description, amount))
+
+        if not result:
+            return Response({
+                'error': 'Failed to submit extra cost - database error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         return Response({
             'message': 'Extra cost submitted successfully',
             'extra_cost_id': extra_cost_id,
@@ -3684,34 +3689,25 @@ def get_extra_costs(request, site_id):
     """
     try:
         extra_costs = fetch_all("""
-            SELECT 
-                e.id,
-                e.description,
-                e.amount,
-                e.notes,
-                e.payment_status,
-                e.uploaded_at,
-                e.paid_amount,
-                e.payment_date,
-                u.full_name as submitted_by
-            FROM extra_works e
-            JOIN users u ON e.uploaded_by = u.id
-            WHERE e.site_id = %s
-            ORDER BY e.uploaded_at DESC
+            SELECT
+                id,
+                site_id,
+                description,
+                amount,
+                bill
+            FROM extra_works
+            WHERE site_id = %s
+            ORDER BY id DESC
         """, (site_id,))
-        
+
         return Response({
             'extra_costs': [
                 {
                     'id': str(ec['id']),
+                    'site_id': str(ec['site_id']),
                     'description': ec['description'],
                     'amount': float(ec['amount']) if ec['amount'] else 0,
-                    'notes': ec['notes'],
-                    'payment_status': ec['payment_status'],
-                    'uploaded_at': ec['uploaded_at'].isoformat() if ec['uploaded_at'] else None,
-                    'paid_amount': float(ec['paid_amount']) if ec['paid_amount'] else 0,
-                    'payment_date': ec['payment_date'].isoformat() if ec['payment_date'] else None,
-                    'submitted_by': ec['submitted_by'],
+                    'bill': ec['bill'] if ec['bill'] else None,
                 }
                 for ec in extra_costs
             ]

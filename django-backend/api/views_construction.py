@@ -3721,8 +3721,7 @@ def get_extra_costs(request, site_id):
                 id,
                 site_id,
                 description,
-                amount,
-                bill
+                amount
             FROM extra_works
             WHERE site_id = %s
             ORDER BY id DESC
@@ -3741,7 +3740,6 @@ def get_extra_costs(request, site_id):
                     'site_id': str(ec['site_id']),
                     'description': ec['description'],
                     'amount': float(ec['amount']) if ec['amount'] else 0,
-                    'bill': ec['bill'] if ec['bill'] else None,
                 }
                 for ec in extra_costs or []
             ]

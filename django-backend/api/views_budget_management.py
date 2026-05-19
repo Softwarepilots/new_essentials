@@ -1134,3 +1134,106 @@ def get_phase_payments(request, site_id):
         import traceback
         traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def update_phase_payment(request):
+    """
+    Admin: Update a phase payment amount
+    PUT /api/budget/update-phase-payment/
+    Body: {
+        "site_id": "uuid",
+        "phase_number": 1,
+        "phase_amount": 1000000,
+        "payment_date": "2026-05-08",
+        "notes": "optional"
+    }
+    """
+    try:
+        user_id = request.user['user_id']
+        user_role = request.user.get('role', '')
+
+        if user_role != 'Admin':
+            return Response({'error': 'Only Admin can update phase payments'},
+                          status=status.HTTP_403_FORBIDDEN)
+
+        site_id = request.data.get('site_id')
+        phase_number = request.data.get('phase_number')
+        phase_amount = request.data.get('phase_amount')
+        payment_date = request.data.get('payment_date')
+        notes = request.data.get('notes', '')
+
+        if not all([site_id, phase_number, phase_amount]):
+            return Response({
+                'error': 'site_id, phase_number, and phase_amount are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if phase_number < 1 or phase_number > 10:
+            return Response({
+                'error': 'phase_number must be between 1 and 10'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get active budget allocation
+        budget = fetch_one("""
+            SELECT id, total_budget, client_balance
+            FROM site_budget_allocation
+            WHERE site_id = %s AND status = 'ACTIVE'
+        """, (site_id,))
+
+        if not budget:
+            return Response({
+                'error': 'No active budget allocation found for this site'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        budget_id = budget['id']
+        current_balance = float(budget['client_balance'] or budget['total_budget'])
+
+        # Get existing phase payment
+        existing_phase = fetch_one("""
+            SELECT id, phase_amount FROM budget_phase_payments
+            WHERE budget_allocation_id = %s AND phase_number = %s
+        """, (budget_id, phase_number))
+
+        if not existing_phase:
+            return Response({
+                'error': f'Phase {phase_number} payment not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        old_amount = float(existing_phase['phase_amount'])
+        new_amount = float(phase_amount)
+        amount_difference = new_amount - old_amount
+
+        # Check if new amount would exceed total budget when adjusting balance
+        new_balance = current_balance - amount_difference
+        if new_balance < 0:
+            return Response({
+                'error': f'New phase amount would exceed available balance'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update phase payment
+        execute_query("""
+            UPDATE budget_phase_payments
+            SET phase_amount = %s, payment_date = %s, notes = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE budget_allocation_id = %s AND phase_number = %s
+        """, (new_amount, payment_date or datetime.now().date(), notes, budget_id, phase_number))
+
+        # Update client balance with the difference
+        execute_query("""
+            UPDATE site_budget_allocation
+            SET client_balance = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (new_balance, budget_id))
+
+        return Response({
+            'success': True,
+            'message': f'Phase {phase_number} payment updated successfully',
+            'new_balance': new_balance
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"❌ Error updating phase payment: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

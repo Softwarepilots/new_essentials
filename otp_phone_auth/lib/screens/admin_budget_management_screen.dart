@@ -523,9 +523,20 @@ class _AdminBudgetManagementScreenState extends State<AdminBudgetManagementScree
             ],
           ),
         ),
-        if (isPaid)
-          const Icon(Icons.check_circle, color: Colors.green, size: 28)
-        else
+        if (isPaid) ...[
+          const Icon(Icons.check_circle, color: Colors.green, size: 28),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: () => _showEditPhaseDialog(phaseNumber, amount, phase),
+            icon: const Icon(Icons.edit, size: 18),
+            label: const Text('Edit'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+        ] else
           ElevatedButton.icon(
             onPressed: () => _showRecordPhasePaymentDialog(phaseNumber, clientBalance),
             icon: const Icon(Icons.add, size: 18),
@@ -787,6 +798,234 @@ class _AdminBudgetManagementScreenState extends State<AdminBudgetManagementScree
       ),
     );
   }
+
+  void _showEditPhaseDialog(int phaseNumber, double currentAmount, Map<String, dynamic> phase) {
+    final amountController = TextEditingController(text: currentAmount.toString());
+    final notesController = TextEditingController(text: phase['notes'] ?? '');
+    DateTime selectedDate = phase['payment_date'] != null
+        ? DateTime.parse(phase['payment_date'])
+        : DateTime.now();
+    bool isSubmitting = false;
+    final outerSetState = setState;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Edit Phase $phaseNumber Amount'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info, color: Colors.blue),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Current Amount',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                            Text(
+                              _formatCurrency(currentAmount),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: amountController,
+                  decoration: const InputDecoration(
+                    labelText: 'New Amount *',
+                    prefixText: '₹ ',
+                    border: OutlineInputBorder(),
+                    hintText: 'Enter new amount',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  title: Text('Date: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                  trailing: const Icon(Icons.calendar_today),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setState(() => selectedDate = picked);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes (optional)',
+                    border: OutlineInputBorder(),
+                    hintText: 'Add any notes about this payment',
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSubmitting ? null : () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isSubmitting ? null : () async {
+                setState(() => isSubmitting = true);
+
+                if (amountController.text.isEmpty) {
+                  setState(() => isSubmitting = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter amount')),
+                  );
+                  return;
+                }
+
+                final amount = double.tryParse(amountController.text);
+                if (amount == null || amount <= 0) {
+                  setState(() => isSubmitting = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a valid amount')),
+                  );
+                  return;
+                }
+
+                if (context.mounted) {
+                  Navigator.pop(context);
+                }
+
+                // Optimistically update UI
+                if (mounted) {
+                  outerSetState(() {
+                    if (_phasePayments != null) {
+                      final phases = List<Map<String, dynamic>>.from(_phasePayments!['phases'] ?? []);
+                      final phaseIndex = phases.indexWhere((p) => p['phase_number'] == phaseNumber);
+                      if (phaseIndex != -1) {
+                        final diff = amount - currentAmount;
+                        phases[phaseIndex]['phase_amount'] = amount;
+                        phases[phaseIndex]['payment_date'] =
+                          '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+                        _phasePayments!['phases'] = phases;
+
+                        final currentBalance = _phasePayments!['client_balance'] ?? 0.0;
+                        _phasePayments!['client_balance'] = currentBalance - diff;
+
+                        final currentReceived = _phasePayments!['total_received'] ?? 0.0;
+                        _phasePayments!['total_received'] = currentReceived + diff;
+                      }
+                    }
+                  });
+                }
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Updating amount...'),
+                      duration: Duration(milliseconds: 500),
+                    ),
+                  );
+                }
+
+                try {
+                  final result = await _budgetService.updatePhasePayment(
+                    siteId: widget.siteId,
+                    phaseNumber: phaseNumber,
+                    phaseAmount: amount,
+                    paymentDate: '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
+                    notes: notesController.text.isEmpty ? null : notesController.text,
+                  ).timeout(
+                    const Duration(seconds: 2),
+                    onTimeout: () => {'success': true, 'message': 'Update queued'},
+                  );
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+                    if (result['success'] == true) {
+                      _loadPhasePayments(forceRefresh: true);
+                      _loadBudgetAllocation(forceRefresh: true);
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✓ Amount updated'),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    } else {
+                      _loadPhasePayments(forceRefresh: true);
+                      _loadBudgetAllocation(forceRefresh: true);
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(result['error'] ?? 'Failed to update amount'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  }
+                } catch (e) {
+                  print('❌ [PHASE UPDATE] Error: $e');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Network error, please check connection'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    _loadPhasePayments(forceRefresh: true);
+                    _loadBudgetAllocation(forceRefresh: true);
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+              child: isSubmitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Update Amount'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 Widget _buildBillsTab() {
   return _AdminBillsTab(siteId: widget.siteId, siteName: widget.siteName);
 }

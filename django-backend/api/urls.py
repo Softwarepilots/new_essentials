@@ -318,6 +318,7 @@ urlpatterns = [
     
     # Phase Payment Management
     path('budget/record-phase-payment/', views_budget_management.record_phase_payment, name='record-phase-payment'),
+    path('budget/update-phase-payment/', views_budget_management.update_phase_payment, name='update-phase-payment'),
     path('budget/phase-payments/<str:site_id>/', views_budget_management.get_phase_payments, name='get-phase-payments'),
     
     # ============================================

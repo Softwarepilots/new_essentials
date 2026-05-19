@@ -578,6 +578,57 @@ class BudgetManagementService {
     }
   }
 
+  /// Update phase payment amount
+  Future<Map<String, dynamic>> updatePhasePayment({
+    required String siteId,
+    required int phaseNumber,
+    required double phaseAmount,
+    String? paymentDate,
+    String? notes,
+  }) async {
+    try {
+      final token = await _authService.getToken();
+      if (token == null) {
+        return {'success': false, 'error': 'Not authenticated'};
+      }
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/budget/update-phase-payment/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'site_id': siteId,
+          'phase_number': phaseNumber,
+          'phase_amount': phaseAmount,
+          'payment_date': paymentDate,
+          'notes': notes,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Phase payment updated successfully',
+          'new_balance': data['new_balance'],
+        };
+      }
+
+      final error = json.decode(response.body);
+      return {
+        'success': false,
+        'error': error['error'] ?? 'Failed to update phase payment',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
   /// Get all materials from material_master table
   Future<List<Map<String, dynamic>>> getMaterials() async {
     try {

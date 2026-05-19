@@ -3658,11 +3658,15 @@ def submit_extra_cost(request):
         
         # Insert extra cost
         extra_cost_id = str(uuid.uuid4())
+        print(f'📦 [EXTRA_COST] Inserting: id={extra_cost_id}, site_id={site_id}, description={description}, amount={amount}')
+
         result = execute_query("""
             INSERT INTO extra_works
             (id, site_id, description, amount)
             VALUES (%s, %s, %s, %s)
         """, (extra_cost_id, site_id, description, amount))
+
+        print(f'📦 [EXTRA_COST] Insert result: {result}')
 
         if not result:
             return Response({
@@ -3688,6 +3692,7 @@ def get_extra_costs(request, site_id):
     GET /api/construction/extra-costs/<site_id>/
     """
     try:
+        print(f'📦 [EXTRA_COST] Fetching for site_id={site_id}')
         extra_costs = fetch_all("""
             SELECT
                 id,
@@ -3700,6 +3705,11 @@ def get_extra_costs(request, site_id):
             ORDER BY id DESC
         """, (site_id,))
 
+        print(f'📦 [EXTRA_COST] Found {len(extra_costs) if extra_costs else 0} extra costs')
+        if extra_costs:
+            for ec in extra_costs:
+                print(f'📦 [EXTRA_COST] Row: {ec}')
+
         return Response({
             'extra_costs': [
                 {
@@ -3709,7 +3719,7 @@ def get_extra_costs(request, site_id):
                     'amount': float(ec['amount']) if ec['amount'] else 0,
                     'bill': ec['bill'] if ec['bill'] else None,
                 }
-                for ec in extra_costs
+                for ec in extra_costs or []
             ]
         }, status=status.HTTP_200_OK)
         

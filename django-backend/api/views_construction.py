@@ -3636,7 +3636,11 @@ def submit_extra_cost(request):
     POST /api/construction/submit-extra-cost/
     """
     try:
-        print(f'📦 [EXTRA_COST] Request data: {request.data}')
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f'📦 [EXTRA_COST] VIEW EXECUTED - Request data: {request.data}')
+        print(f'📦 [EXTRA_COST] REQUEST DATA: {request.data}', flush=True)
+
         user_id = request.user.get('user_id') or request.user.get('id')
         site_id = request.data.get('site_id')
         amount = request.data.get('amount')
@@ -3677,12 +3681,19 @@ def submit_extra_cost(request):
                 'error': 'Failed to submit extra cost - database error'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        print(f'📦 [EXTRA_COST] Insert succeeded, returning 201')
-        return Response({
+        print(f'📦 [EXTRA_COST] Insert succeeded, returning 201', flush=True)
+        response = Response({
             'message': 'Extra cost submitted successfully',
             'extra_cost_id': extra_cost_id,
-            'amount': amount
+            'amount': amount,
+            'debug': {
+                'site_id': str(site_id),
+                'description': description,
+                'amount': amount
+            }
         }, status=status.HTTP_201_CREATED)
+        response['X-Debug-Header'] = 'View-Executed'
+        return response
 
     except Exception as e:
         print(f'📦 [EXTRA_COST] Exception: {str(e)}')

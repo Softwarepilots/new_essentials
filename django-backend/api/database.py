@@ -174,10 +174,15 @@ def execute_query(query, params=None):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params or ())
+                rowcount = cur.rowcount
+                print(f"[DB QUERY] Executed query, affected rows: {rowcount}")
                 conn.commit()
-                return True
+                print(f"[DB QUERY] Transaction committed successfully")
+                return rowcount > 0 if rowcount >= 0 else True
     except Exception as e:
         print(f"[DB ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def fetch_one(query, params=None):

@@ -1742,6 +1742,30 @@ def get_all_entries_for_accountant(request):
         """
         material_entries = fetch_all(material_query)
 
+        # Get extra costs for all sites
+        extra_costs_query = """
+            SELECT
+                e.id,
+                e.site_id,
+                e.description,
+                e.amount,
+                e.uploaded_at as entry_date,
+                u.full_name as submitted_by_name,
+                u.username as submitted_by_username,
+                r.role_name as submitted_by_role,
+                s.site_name,
+                s.customer_name,
+                s.area,
+                s.street
+            FROM extra_works e
+            JOIN users u ON e.uploaded_by = u.id
+            JOIN roles r ON u.role_id = r.id
+            JOIN sites s ON e.site_id = s.id
+            ORDER BY e.uploaded_at DESC
+            LIMIT 200
+        """
+        extra_costs = fetch_all(extra_costs_query)
+
         # Sum labour_count from cash_entries table (total workers approved)
         approved_count_result = fetch_one("""
             SELECT COALESCE(SUM(labour_count), 0) as count
@@ -1750,7 +1774,7 @@ def get_all_entries_for_accountant(request):
         approved_entries_count = approved_count_result['count'] if approved_count_result else 0
 
         # Debug logging BEFORE creating response
-        print(f"📊 [ACCOUNTANT API] Returning {len(labour_entries)} labour entries, {len(material_entries)} material entries")
+        print(f"📊 [ACCOUNTANT API] Returning {len(labour_entries)} labour entries, {len(material_entries)} material entries, {len(extra_costs)} extra costs")
         print(f"📊 [ACCOUNTANT API] Total labour count from cash_entries: {approved_entries_count}")
         total_salary = sum(float(e.get('total_cost', 0) or 0) for e in labour_entries)
         print(f"💰 [ACCOUNTANT API] Total salary: ₹{total_salary}")
@@ -1801,8 +1825,25 @@ def get_all_entries_for_accountant(request):
                 }
                 for e in material_entries
             ],
+            'extra_costs': [
+                {
+                    'id': str(e['id']),
+                    'site_id': str(e['site_id']),
+                    'description': e['description'],
+                    'amount': float(e['amount']) if e.get('amount') else 0,
+                    'entry_date': e['entry_date'].isoformat() if e.get('entry_date') else None,
+                    'submitted_by_name': e.get('submitted_by_name', ''),
+                    'submitted_by_role': e.get('submitted_by_role', ''),
+                    'site_name': e['site_name'],
+                    'customer_name': e['customer_name'],
+                    'area': e['area'],
+                    'street': e['street'],
+                }
+                for e in extra_costs
+            ],
             'total_labour_entries': approved_entries_count,  # Count of distinct approved entries
             'total_material_entries': len(material_entries),
+            'total_extra_costs': len(extra_costs),
             'message': 'Showing approved entries from ALL supervisors and sites for accountant'
         }
         

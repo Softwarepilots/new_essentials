@@ -3707,27 +3707,29 @@ def submit_extra_cost(request):
 @permission_classes([IsAuthenticated])
 def get_extra_costs(request, site_id):
     """
-    Get all extra costs for a specific site added by current user
+    Get all extra costs for a specific site added by users with same role
     GET /api/construction/extra-costs/<site_id>/
     """
     try:
         import logging
         logger = logging.getLogger(__name__)
 
-        user_id = request.user['user_id']
-        print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_id={user_id}', flush=True)
-        logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_id={user_id}')
+        user_role = request.user.get('role', '')
+        print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_role={user_role}', flush=True)
+        logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_role={user_role}')
 
         extra_costs = fetch_all("""
             SELECT
-                id,
-                site_id,
-                description,
-                amount
-            FROM extra_works
-            WHERE site_id = %s AND uploaded_by = %s
-            ORDER BY id DESC
-        """, (site_id, user_id))
+                e.id,
+                e.site_id,
+                e.description,
+                e.amount
+            FROM extra_works e
+            JOIN users u ON e.uploaded_by = u.id
+            JOIN roles r ON u.role_id = r.id
+            WHERE e.site_id = %s AND r.role_name = %s
+            ORDER BY e.id DESC
+        """, (site_id, user_role))
 
         print(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs', flush=True)
         logger.info(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs')

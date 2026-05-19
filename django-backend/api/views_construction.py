@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 from datetime import datetime, time
 from .authentication import JWTAuthentication
 from .database import execute_query, fetch_one, fetch_all
@@ -585,7 +587,7 @@ def check_entry_lock(request):
 
 
 from django.http import JsonResponse
-
+@csrf_exempt
 def submit_material_balance(request):
     """
     Supervisor: Submit material balance with custom local time

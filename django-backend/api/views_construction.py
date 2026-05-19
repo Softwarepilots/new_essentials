@@ -8,7 +8,6 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
 from datetime import datetime, time
 from .authentication import JWTAuthentication
 from .database import execute_query, fetch_one, fetch_all
@@ -588,68 +587,35 @@ def check_entry_lock(request):
 
 from django.http import JsonResponse
 @csrf_exempt
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def submit_material_balance(request):
     """
     Supervisor: Submit material balance with custom local time
     Accepts custom_datetime from client to use local device time
     """
-    print(f'🔵 [MATERIAL] Raw request received')
-    print(f'🔵 [MATERIAL] Request method: {request.method}')
-    print(f'🔵 [MATERIAL] Request path: {request.path}')
-    print(f'🔵 [MATERIAL] Content-Type: {request.META.get("CONTENT_TYPE", "NOT SET")}')
-    print(f'🔵 [MATERIAL] Content-Length: {request.META.get("CONTENT_LENGTH", "NOT SET")}')
+    print(f'🔵 [MATERIAL] View called successfully')
 
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-
-    import sys
     try:
         # Import time utilities
         from .time_utils import is_within_entry_hours, get_entry_metadata, get_entry_time_status, get_day_of_week
         from datetime import datetime
         import pytz
-        import json
+        import sys
 
         # Ensure stdout uses UTF-8 encoding
         if sys.stdout.encoding != 'utf-8':
             sys.stdout.reconfigure(encoding='utf-8')
 
-        print(f'🔵 [MATERIAL] About to read request body')
-        body = request.body.decode('utf-8')
-        print(f'🔵 [MATERIAL] Raw body: {body}')
-
-        request_data = json.loads(body)
-        print(f'📦 [MATERIAL] Parsed request data: {request_data}')
-
-        # Manual authentication
-        print(f'🔵 [MATERIAL] Authenticating user...')
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        print(f'🔵 [MATERIAL] Auth header: {auth_header[:50] if auth_header else "NOT SET"}')
-
-        if not auth_header:
-            print(f'❌ [MATERIAL] No authorization header')
-            return JsonResponse({'error': 'Authorization required'}, status=401)
-
-        try:
-            jwt_auth = JWTAuthentication()
-            user_auth = jwt_auth.authenticate(request)
-            if user_auth:
-                user_data, _ = user_auth
-                user_id = user_data.get('user_id')
-                print(f'✅ [MATERIAL] Authenticated user: {user_id}')
-            else:
-                print(f'❌ [MATERIAL] Authentication failed')
-                return JsonResponse({'error': 'Authentication failed'}, status=401)
-        except Exception as auth_error:
-            print(f'❌ [MATERIAL] Authentication error: {auth_error}')
-            return JsonResponse({'error': f'Authentication error: {str(auth_error)}'}, status=401)
-        site_id = request_data.get('site_id')
-        materials = request_data.get('materials', [])  # List of {material_type, quantity, unit}
-        extra_cost = request_data.get('extra_cost', 0)
-        extra_cost_notes = request_data.get('extra_cost_notes', '')
+        user_id = request.user['user_id']
+        site_id = request.data.get('site_id')
+        materials = request.data.get('materials', [])  # List of {material_type, quantity, unit}
+        extra_cost = request.data.get('extra_cost', 0)
+        extra_cost_notes = request.data.get('extra_cost_notes', '')
 
         # Get custom date/time from client (local device time)
-        custom_datetime_str = request_data.get('custom_datetime')
+        custom_datetime_str = request.data.get('custom_datetime')
 
         print(f'📦 [MATERIAL] site_id: {site_id}')
         print(f'📦 [MATERIAL] materials: {materials}')
@@ -658,7 +624,7 @@ def submit_material_balance(request):
 
         if not site_id or not materials:
             print(f'❌ [MATERIAL] Validation failed - site_id: {bool(site_id)}, materials: {bool(materials)}')
-            return JsonResponse({'error': 'site_id and materials are required'}, status=400)
+            return Response({'error': 'site_id and materials are required'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Use custom date/time if provided, otherwise use current IST time
         if custom_datetime_str:
@@ -702,9 +668,9 @@ def submit_material_balance(request):
         """, (site_id, entry_date))
         
         if existing_entry:
-            return JsonResponse({
+            return Response({
                 'error': f'Material balance already submitted for {entry_date} for this site. It can only be submitted once per day per site.'
-            }, status=400)
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Insert material usage records with custom or current time
         for material in materials:
@@ -728,7 +694,7 @@ def submit_material_balance(request):
             """, (material_id, site_id, user_id, material_type, material['quantity'], 
                   unit, entry_date, notes, entry_time))
         
-        return JsonResponse({
+        return Response({
             'message': 'Material balance submitted successfully',
             'day_of_week': day_of_week,
             'entry_date': entry_date.strftime('%Y-%m-%d'),
@@ -736,7 +702,7 @@ def submit_material_balance(request):
             'materials_count': len(materials),
             'extra_cost': extra_cost,
             'used_custom_time': custom_datetime_str is not None
-        }, status=201)
+        }, status=status.HTTP_201_CREATED)
         
     except Exception as e:
         # Ensure error message is safe to encode
@@ -744,7 +710,7 @@ def submit_material_balance(request):
         error_msg = str(e).encode('utf-8', errors='replace').decode('utf-8')
         print(f"❌ [MATERIAL] Error in submit_material_balance: {error_msg}")
         print(f"❌ [MATERIAL] Traceback: {traceback.format_exc()}")
-        return JsonResponse({'error': error_msg}, status=500)
+        return Response({'error': error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])

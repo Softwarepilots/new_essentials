@@ -3714,7 +3714,7 @@ def get_extra_costs(request, site_id):
         import logging
         logger = logging.getLogger(__name__)
 
-        user_id = request.user.id
+        user_id = request.user['user_id']
         print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_id={user_id}', flush=True)
         logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_id={user_id}')
 
@@ -3726,7 +3726,7 @@ def get_extra_costs(request, site_id):
                 amount
             FROM extra_works
             WHERE site_id = %s AND uploaded_by = %s
-            ORDER BY uploaded_at DESC
+            ORDER BY id DESC
         """, (site_id, user_id))
 
         print(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs', flush=True)
@@ -3746,8 +3746,11 @@ def get_extra_costs(request, site_id):
                 for ec in extra_costs or []
             ]
         }, status=status.HTTP_200_OK)
-        
+
     except Exception as e:
+        print(f'❌ [EXTRA_COST] GET ERROR: {str(e)}', flush=True)
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

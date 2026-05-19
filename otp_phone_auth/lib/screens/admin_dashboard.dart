@@ -1011,19 +1011,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildNotificationsTab() {
-    // Split notifications: Labour vs Photos+Material
-    final labourNotifications = _notifications.where((n) => 
+    // Split notifications: Labour vs Photos+Material vs Site Requirements
+    final labourNotifications = _notifications.where((n) =>
       n['entry_type'] == 'labour'
     ).toList();
-    
-    final photosAndMaterialNotifications = _notifications.where((n) => 
-      n['entry_type'] == 'morning_photo' || 
+
+    final photosAndMaterialNotifications = _notifications.where((n) =>
+      n['entry_type'] == 'morning_photo' ||
       n['entry_type'] == 'evening_photo' ||
       n['entry_type'] == 'material'
     ).toList();
-    
+
+    final siteRequirementNotifications = _notifications.where((n) =>
+      n['entry_type'] == 'Site Requirement'
+    ).toList();
+
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         children: [
           // Header with actions
@@ -1121,6 +1125,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 Tab(
                   child: Row(
                     children: [
+                      const Icon(Icons.assignment, size: 18),
+                      const SizedBox(width: 6),
+                      Text('Requirements (${siteRequirementNotifications.length})'),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    children: [
                       const Icon(Icons.person_add_alt_1, size: 18),
                       const SizedBox(width: 6),
                       Text('Guests (${_guestVisitors.length})'),
@@ -1141,6 +1154,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     children: [
                       _buildNotificationsList(labourNotifications, 'labour'),
                       _buildNotificationsList(photosAndMaterialNotifications, 'photos_material'),
+                      _buildNotificationsList(siteRequirementNotifications, 'site_requirement'),
                       _buildGuestVisitorsList(),
                     ],
                   ),
@@ -1409,8 +1423,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          type == 'labour' ? Colors.blue : Colors.orange,
-                          type == 'labour' ? Colors.blue.shade700 : Colors.orange.shade700,
+                          type == 'labour' ? Colors.blue : type == 'site_requirement' ? Colors.purple : Colors.orange,
+                          type == 'labour' ? Colors.blue.shade700 : type == 'site_requirement' ? Colors.purple.shade700 : Colors.orange.shade700,
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -1418,14 +1432,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      type == 'labour' ? Icons.people : Icons.photo_camera,
+                      type == 'labour' ? Icons.people : type == 'site_requirement' ? Icons.assignment : Icons.photo_camera,
                       size: 50,
                       color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    type == 'labour' ? 'No Labour Notifications' : 'No Photo or Material Notifications',
+                    type == 'labour' ? 'No Labour Notifications' : type == 'site_requirement' ? 'No Site Requirement Notifications' : 'No Photo or Material Notifications',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -1434,8 +1448,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    type == 'labour' 
+                    type == 'labour'
                         ? 'Labour entry notifications\nwill appear here'
+                        : type == 'site_requirement'
+                        ? 'Site requirement notifications\nwill appear here'
                         : 'Photo and material balance\nnotifications will appear here',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
@@ -1503,6 +1519,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
         entryTypeDisplay = 'Evening Photo';
         entryIcon = Icons.nights_stay;
         entryColor = Colors.indigo;
+        break;
+      case 'Site Requirement':
+        entryTypeDisplay = 'Site Requirement';
+        entryIcon = Icons.assignment;
+        entryColor = Colors.purple;
         break;
       default:
         entryTypeDisplay = 'Late Entry';

@@ -79,6 +79,7 @@ class _AdminBudgetManagementScreenState extends State<AdminBudgetManagementScree
     // Add listener to load utilization only on first access
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
+        setState(() {}); // Rebuild to update FAB visibility
         if (_tabController.index == 1) {
           // Load utilization only if not already loaded
           if (!_utilizationLoaded) {

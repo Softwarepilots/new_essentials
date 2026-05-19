@@ -372,19 +372,54 @@ class ConstructionService {
       print('🔍 [MATERIAL] Request body: $body');
 
       final response = await http.post(
-        Uri.parse('$baseUrl/construction/material-balance/'),
+        Uri.parse('$baseUrl/construction/submit-material-balance/'),
         headers: await _getHeaders(),
         body: json.encode(body),
       );
 
+      print('🔍 [MATERIAL] Response status code: ${response.statusCode}');
+      print('🔍 [MATERIAL] Response body: ${response.body}');
+
       final data = json.decode(response.body);
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return {'success': true, 'message': data['message']};
       } else {
         return {'success': false, 'error': data['error'] ?? 'Failed to submit'};
       }
     } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // TEST METHOD - Remove after debugging
+  Future<Map<String, dynamic>> testMaterialBalance({
+    required String siteId,
+    required List<Map<String, dynamic>> materials,
+  }) async {
+    try {
+      final body = {'site_id': siteId, 'materials': materials};
+      print('🧪 [TEST] Testing POST to /api/construction/test-material/');
+      print('🧪 [TEST] Request body: $body');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/construction/test-material/'),
+        headers: await _getHeaders(),
+        body: json.encode(body),
+      );
+
+      print('🧪 [TEST] Response status: ${response.statusCode}');
+      print('🧪 [TEST] Response body: ${response.body}');
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      } else {
+        return {'success': false, 'error': data['error'] ?? 'Test failed'};
+      }
+    } catch (e) {
+      print('🧪 [TEST] Exception: $e');
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
@@ -1656,6 +1691,44 @@ class ConstructionService {
       }
     } catch (e) {
       print('❌ Error adding client requirement: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateClientRequirement(
+    String requirementId,
+    String? description,
+    double? amount,
+  ) async {
+    try {
+      final token = await _authService.getToken();
+      if (token == null) return false;
+
+      final body = <String, dynamic>{};
+      if (description != null) body['description'] = description;
+      if (amount != null) body['amount'] = amount;
+
+      if (body.isEmpty) return false;
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/accountant/update-client-requirement/$requirementId/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print(
+          '❌ Failed to update client requirement: ${response.statusCode} - ${response.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error updating client requirement: $e');
       return false;
     }
   }

@@ -5421,7 +5421,7 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${quantity.toInt()} $unit',
+                                  'Left: ${quantity.toInt()} $unit',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Colors.white,
@@ -5471,13 +5471,22 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
             ],
           ),
           const SizedBox(height: 14),
-          // Modern Slider with value display
+          // Modern Slider with value display - Stocks Left
           Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Stocks Left',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     SliderTheme(
                       data: SliderThemeData(
                         activeTrackColor: Colors.green.shade600,
@@ -5511,7 +5520,7 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            '0',
+                            'None Left',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade500,
@@ -5519,7 +5528,7 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
                             ),
                           ),
                           Text(
-                            '${(availableBalance > 0 ? availableBalance : 100).toInt()}',
+                            'All Left (${(availableBalance > 0 ? availableBalance : 100).toInt()} $unit)',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade500,
@@ -5620,22 +5629,51 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
     final extraCostNotes = _extraCostNotesController.text.trim();
 
     // Prepare materials list with correct units from available materials
-    final materials = _materialQuantities.entries
-        .where((entry) => entry.value > 0)
-        .map((entry) {
-          // Find the material data to get the correct unit
-          final materialData = _availableMaterials.firstWhere(
-            (m) => m['material_type'] == entry.key,
-            orElse: () => {'unit': 'units'},
-          );
+    // Convert stocks left to quantity used
+    final materials = <Map<String, dynamic>>[];
 
-          return {
-            'material_type': entry.key,
-            'quantity': entry.value,
-            'unit': materialData['unit'] as String? ?? 'units',
-          };
-        })
-        .toList();
+    print('📦 [MATERIAL] Available materials: $_availableMaterials');
+    print('📦 [MATERIAL] Material quantities (slider values): $_materialQuantities');
+
+    for (final entry in _materialQuantities.entries) {
+      print('🔍 [MATERIAL] Processing: ${entry.key} = ${entry.value}');
+
+      if (entry.value < 0) {
+        print('⏭️ [MATERIAL] Skipping ${entry.key} - negative value');
+        continue;
+      }
+
+      // Find the material data to get the correct unit and current balance
+      final materialData = _availableMaterials.firstWhere(
+        (m) => m['material_type'] == entry.key,
+        orElse: () => {},
+      );
+
+      if (materialData.isEmpty) {
+        print('⏭️ [MATERIAL] Skipping ${entry.key} - material data not found');
+        continue;
+      }
+
+      final currentBalance = (materialData['current_balance'] as num?)?.toDouble() ?? 0.0;
+      final stocksLeft = entry.value;
+      final quantityUsed = (currentBalance - stocksLeft).clamp(0.0, double.infinity);
+
+      print(
+        '📊 [MATERIAL] ${entry.key}: balance=$currentBalance, left=$stocksLeft, used=$quantityUsed',
+      );
+
+      // Only include materials with positive usage
+      if (quantityUsed > 0) {
+        materials.add({
+          'material_type': entry.key,
+          'quantity': quantityUsed,
+          'unit': materialData['unit'] as String? ?? 'units',
+        });
+        print('✅ [MATERIAL] Added ${entry.key} with usage $quantityUsed');
+      } else {
+        print('⏭️ [MATERIAL] Skipping ${entry.key} - zero usage');
+      }
+    }
 
     // Show confirmation dialog first
     final confirmed = await showDialog<bool>(
@@ -5655,6 +5693,20 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
     print(
       '🕒 [MATERIAL] About to submit with selected time: $_selectedDateTime',
     );
+    print('📦 [MATERIAL] Materials to submit: $materials');
+
+    if (materials.isEmpty) {
+      setState(() => _isSubmitting = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No materials with usage to submit'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
     final result = await _constructionService.submitMaterialBalance(
       siteId: widget.siteId,

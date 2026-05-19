@@ -3711,7 +3711,11 @@ def get_extra_costs(request, site_id):
     GET /api/construction/extra-costs/<site_id>/
     """
     try:
-        print(f'📦 [EXTRA_COST] Fetching for site_id={site_id}')
+        import logging
+        logger = logging.getLogger(__name__)
+        print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}', flush=True)
+        logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}')
+
         extra_costs = fetch_all("""
             SELECT
                 id,
@@ -3724,10 +3728,11 @@ def get_extra_costs(request, site_id):
             ORDER BY id DESC
         """, (site_id,))
 
-        print(f'📦 [EXTRA_COST] Found {len(extra_costs) if extra_costs else 0} extra costs')
+        print(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs', flush=True)
+        logger.info(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs')
         if extra_costs:
             for ec in extra_costs:
-                print(f'📦 [EXTRA_COST] Row: {ec}')
+                print(f'📦 [EXTRA_COST] Row: {ec}', flush=True)
 
         return Response({
             'extra_costs': [

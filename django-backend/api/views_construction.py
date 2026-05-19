@@ -5168,8 +5168,8 @@ def add_client_requirement(request):
 
         notification_query = """
             INSERT INTO notifications
-            (id, site_id, entry_type, message, supervisor_id, supervisor_name, site_name)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (id, site_id, entry_type, message, actual_time, supervisor_id, supervisor_name, site_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         execute_query(notification_query, (
@@ -5177,6 +5177,7 @@ def add_client_requirement(request):
             site_id,
             'Site Requirement',
             notification_message,
+            None,
             user_id,
             user_name,
             site_name
@@ -5327,8 +5328,8 @@ def update_client_requirement(request, requirement_id):
 
         notification_query = """
             INSERT INTO notifications
-            (id, site_id, entry_type, message, supervisor_id, supervisor_name, site_name)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (id, site_id, entry_type, message, actual_time, supervisor_id, supervisor_name, site_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         execute_query(notification_query, (
@@ -5336,6 +5337,7 @@ def update_client_requirement(request, requirement_id):
             site_id,
             'Site Requirement',
             notification_message,
+            None,
             user_id,
             user_name,
             site_name

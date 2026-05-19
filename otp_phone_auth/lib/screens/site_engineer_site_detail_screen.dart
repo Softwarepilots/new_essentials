@@ -6,6 +6,8 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/construction_service.dart';
 import 'site_engineer_labour_screen.dart';
+import 'site_engineer_material_screen.dart';
+import 'site_engineer_extra_cost_screen.dart';
 
 class SiteEngineerSiteDetailScreen extends StatefulWidget {
   final Map<String, dynamic> site;
@@ -33,25 +35,32 @@ class _SiteEngineerSiteDetailScreenState extends State<SiteEngineerSiteDetailScr
 
   Future<void> _loadExtraCosts() async {
     setState(() => _isLoadingExtraCosts = true);
-    
+
     try {
       final token = await _authService.getToken();
-      
+
       final response = await http.get(
         Uri.parse('${AuthService.baseUrl}/construction/extra-costs/${widget.site['id']}/'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      print('📦 [EXTRA_COST] Response status: ${response.statusCode}');
+      print('📦 [EXTRA_COST] Response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        final extraCostsList = List<Map<String, dynamic>>.from(data['extra_costs'] ?? []);
+        print('📦 [EXTRA_COST] Loaded ${extraCostsList.length} extra costs');
         setState(() {
-          _extraCosts = List<Map<String, dynamic>>.from(data['extra_costs']);
+          _extraCosts = extraCostsList;
           _isLoadingExtraCosts = false;
         });
       } else {
+        print('❌ [EXTRA_COST] Failed to load: ${response.statusCode}');
         setState(() => _isLoadingExtraCosts = false);
       }
     } catch (e) {
+      print('❌ [EXTRA_COST] Exception: $e');
       setState(() => _isLoadingExtraCosts = false);
     }
   }
@@ -150,6 +159,27 @@ class _SiteEngineerSiteDetailScreenState extends State<SiteEngineerSiteDetailScr
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            // Inventory Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _openMaterialInventory,
+                icon: const Icon(Icons.inventory_2, size: 20),
+                label: const Text(
+                  'Inventory',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: 24),
 
             // Extra Cost Section
@@ -161,7 +191,7 @@ class _SiteEngineerSiteDetailScreenState extends State<SiteEngineerSiteDetailScr
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.deepNavy),
                 ),
                 TextButton.icon(
-                  onPressed: _showAddExtraCostDialog,
+                  onPressed: _openExtraCostScreen,
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Add'),
                   style: TextButton.styleFrom(foregroundColor: AppColors.deepNavy),
@@ -227,6 +257,21 @@ class _SiteEngineerSiteDetailScreenState extends State<SiteEngineerSiteDetailScr
         ),
       ),
     );
+  }
+
+  void _openMaterialInventory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SiteEngineerMaterialScreen(
+          siteId: widget.site['id'].toString(),
+          siteName: widget.site['display_name'] ?? widget.site['site_name'] ?? 'Unknown Site',
+        ),
+      ),
+    ).then((_) {
+      // Reload data when returning from inventory
+      _loadExtraCosts();
+    });
   }
 
   Widget _buildExtraCostSection() {
@@ -402,9 +447,9 @@ class _SiteEngineerSiteDetailScreenState extends State<SiteEngineerSiteDetailScr
 
   Widget _buildExtraCostCard(Map<String, dynamic> cost) {
     final amount = cost['amount'] ?? 0;
-    final status = cost['payment_status'] ?? 'PENDING';
-    final statusColor = status == 'PAID' ? AppColors.statusCompleted : AppColors.statusOverdue;
-    
+    final description = cost['description'] ?? '';
+    final bill = cost['bill'] as String?;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -417,249 +462,62 @@ class _SiteEngineerSiteDetailScreenState extends State<SiteEngineerSiteDetailScr
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '₹${amount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.deepNavy,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: statusColor),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: statusColor,
-                    ),
-                  ),
-                ),
-              ],
+            // Amount
+            Text(
+              '₹${(amount is num ? amount : double.tryParse(amount.toString()) ?? 0).toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.deepNavy,
+              ),
             ),
-            if (cost['description'] != null && cost['description'].toString().isNotEmpty) ...[
+            // Description
+            if (description.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
-                cost['description'],
+                description,
                 style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                   color: AppColors.deepNavy,
                 ),
               ),
             ],
-            if (cost['notes'] != null && cost['notes'].toString().isNotEmpty) ...[
+            // Bill reference if available
+            if (bill != null && bill.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(
-                cost['notes'],
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              Row(
+                children: [
+                  Icon(Icons.receipt, size: 14, color: AppColors.textSecondary),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Bill: $bill',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.person, size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: 4),
-                Text(
-                  cost['submitted_by'] ?? 'Unknown',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const Spacer(),
-                Icon(Icons.calendar_today, size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: 4),
-                Text(
-                  _formatDate(cost['uploaded_at']),
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
           ],
         ),
       ),
     );
   }
 
-  void _showAddExtraCostDialog() {
-    final amountController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final notesController = TextEditingController();
-    bool isSubmitting = false;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text(
-            'Add Extra Cost',
-            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.deepNavy),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Amount *',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.deepNavy),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: amountController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: 'Enter amount',
-                    prefixText: '₹ ',
-                    filled: true,
-                    fillColor: AppColors.lightSlate,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Description *',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.deepNavy),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: descriptionController,
-                  decoration: InputDecoration(
-                    hintText: 'e.g., Extra materials, Labor overtime',
-                    filled: true,
-                    fillColor: AppColors.lightSlate,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Notes (Optional)',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.deepNavy),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: notesController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'Additional details...',
-                    filled: true,
-                    fillColor: AppColors.lightSlate,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSubmitting ? null : () => Navigator.pop(context),
-              child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            ElevatedButton(
-              onPressed: isSubmitting
-                  ? null
-                  : () async {
-                      if (amountController.text.isEmpty || descriptionController.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please fill in amount and description'),
-                            backgroundColor: AppColors.statusOverdue,
-                          ),
-                        );
-                        return;
-                      }
-
-                      setState(() => isSubmitting = true);
-
-                      try {
-                        final token = await _authService.getToken();
-                        
-                        final response = await http.post(
-                          Uri.parse('${AuthService.baseUrl}/construction/submit-extra-cost/'),
-                          headers: {
-                            'Authorization': 'Bearer $token',
-                            'Content-Type': 'application/json',
-                          },
-                          body: json.encode({
-                            'site_id': widget.site['id'],
-                            'amount': amountController.text,
-                            'description': descriptionController.text,
-                            'notes': notesController.text,
-                          }),
-                        );
-
-                        setState(() => isSubmitting = false);
-
-                        if (response.statusCode == 201) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Extra cost submitted successfully!'),
-                              backgroundColor: AppColors.statusCompleted,
-                            ),
-                          );
-                          _loadExtraCosts();
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed: ${response.body}'),
-                              backgroundColor: AppColors.statusOverdue,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        setState(() => isSubmitting = false);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: $e'),
-                            backgroundColor: AppColors.statusOverdue,
-                          ),
-                        );
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.deepNavy,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: isSubmitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  : const Text('Submit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
+  void _openExtraCostScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SiteEngineerExtraCostScreen(site: widget.site),
       ),
-    );
-  }
-
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return 'Unknown';
-    try {
-      final date = DateTime.parse(dateStr);
-      return '${date.day}/${date.month}/${date.year}';
-    } catch (e) {
-      return dateStr;
-    }
+    ).then((_) {
+      _loadExtraCosts();
+    });
   }
 
 }

@@ -15,15 +15,17 @@ import uuid
 import pytz
 
 
-# TEST ENDPOINT - Remove after debugging
-@csrf_exempt
+# TEST ENDPOINT - identical pattern to working admin endpoint
 @api_view(['POST'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def test_material_balance(request):
-    """Test endpoint to verify POST requests work"""
+    """Test endpoint with admin pattern"""
     print(f'✅ [TEST] Test endpoint called!')
-    print(f'✅ [TEST] Request method: {request.method}')
-    print(f'✅ [TEST] Request data: {request.data}')
-    return Response({'message': 'Test endpoint works!', 'received': request.data}, status=status.HTTP_200_OK)
+    user_id = request.user.user_data.get('user_id')
+    site_id = request.data.get('site_id')
+    print(f'✅ [TEST] user_id: {user_id}, site_id: {site_id}')
+    return Response({'message': 'Test endpoint works!', 'user_id': user_id, 'site_id': site_id}, status=status.HTTP_200_OK)
 
 
 # ============================================

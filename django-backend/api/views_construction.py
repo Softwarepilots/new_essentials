@@ -596,7 +596,6 @@ def check_entry_lock(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@csrf_exempt
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
@@ -618,7 +617,7 @@ def submit_material_balance(request):
         if sys.stdout.encoding != 'utf-8':
             sys.stdout.reconfigure(encoding='utf-8')
 
-        user_id = request.user['user_id']
+        user_id = request.user.user_data.get('user_id')
         site_id = request.data.get('site_id')
         materials = request.data.get('materials', [])  # List of {material_type, quantity, unit}
         extra_cost = request.data.get('extra_cost', 0)

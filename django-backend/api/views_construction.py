@@ -616,7 +616,17 @@ def submit_material_balance(request):
         if sys.stdout.encoding != 'utf-8':
             sys.stdout.reconfigure(encoding='utf-8')
 
-        user_id = request.user.get('user_id') if hasattr(request, 'user') else 'test-user'
+        print(f'🔵 [MATERIAL] request.user: {request.user}')
+        print(f'🔵 [MATERIAL] request.user type: {type(request.user)}')
+
+        # Get user_id - handle both authenticated and unauthenticated requests
+        try:
+            user_id = request.user.get('user_id') if isinstance(request.user, dict) else getattr(request.user, 'user_id', 'test-user')
+        except:
+            user_id = 'test-user'
+
+        print(f'🔵 [MATERIAL] user_id: {user_id}')
+
         site_id = request.data.get('site_id')
         materials = request.data.get('materials', [])  # List of {material_type, quantity, unit}
         extra_cost = request.data.get('extra_cost', 0)

@@ -5126,37 +5126,72 @@ def add_client_requirement(request):
     try:
         user_role = request.user.get('role', '')
         user_id = request.user.get('user_id')
-        
+
         # Allow Accountant, Supervisor, and Site Engineer to add client requirements
         if user_role not in ['Accountant', 'Supervisor', 'Site Engineer']:
-            return Response({'error': 'Only Accountant, Supervisor, or Site Engineer can add client requirements'}, 
+            return Response({'error': 'Only Accountant, Supervisor, or Site Engineer can add client requirements'},
                           status=status.HTTP_403_FORBIDDEN)
-        
+
         site_id = request.data.get('site_id')
         description = request.data.get('description')
         amount = request.data.get('amount')
-        
+
         if not site_id or not description or amount is None:
-            return Response({'error': 'site_id, description and amount are required'}, 
+            return Response({'error': 'site_id, description and amount are required'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
+        # Get site name and user name for notification
+        site_info = fetch_one("""
+            SELECT site_name FROM sites WHERE id = %s
+        """, (site_id,))
+
+        user_info = fetch_one("""
+            SELECT full_name FROM users WHERE id = %s
+        """, (user_id,))
+
+        site_name = site_info['site_name'] if site_info else 'Unknown Site'
+        user_name = user_info['full_name'] if user_info else 'Unknown User'
+
         # Insert client requirement
         requirement_id = str(uuid.uuid4())
         insert_query = """
-            INSERT INTO client_requirements 
+            INSERT INTO client_requirements
             (requirement_id, site_id, description, amount, added_by, added_date, status)
             VALUES (%s, %s, %s, %s, %s, NOW(), 'Pending')
         """
-        
+
         execute_query(insert_query, (requirement_id, site_id, description, amount, user_id))
-        
+
+        # Create notification for admin
+        notification_id = str(uuid.uuid4())
+        notification_message = f"{user_name} added a new site requirement: {description} (₹{amount})"
+
+        notification_query = """
+            INSERT INTO notifications
+            (id, site_id, entry_type, message, supervisor_id, supervisor_name, site_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+
+        execute_query(notification_query, (
+            notification_id,
+            site_id,
+            'Site Requirement',
+            notification_message,
+            user_id,
+            user_name,
+            site_name
+        ))
+
         return Response({
             'message': 'Client requirement added successfully',
-            'requirement_id': requirement_id
+            'requirement_id': requirement_id,
+            'notification_id': notification_id
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         print(f"❌ Error adding client requirement: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -5219,6 +5254,104 @@ def get_client_requirements(request):
         traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['PUT'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def update_client_requirement(request, requirement_id):
+    """
+    Supervisor/Site Engineer: Update client requirement
+    PUT /api/accountant/update-client-requirement/<requirement_id>/
+    Body: {
+        "description": "Updated description",
+        "amount": 60000
+    }
+    """
+    try:
+        user_role = request.user.get('role', '')
+        user_id = request.user.get('user_id')
+
+        # Allow Accountant, Supervisor, and Site Engineer to update client requirements
+        if user_role not in ['Accountant', 'Supervisor', 'Site Engineer']:
+            return Response({'error': 'Only Accountant, Supervisor, or Site Engineer can update client requirements'},
+                          status=status.HTTP_403_FORBIDDEN)
+
+        description = request.data.get('description')
+        amount = request.data.get('amount')
+
+        if not description and amount is None:
+            return Response({'error': 'At least description or amount must be provided'},
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        # Get current requirement details
+        requirement = fetch_one("""
+            SELECT site_id, description, amount FROM client_requirements
+            WHERE requirement_id = %s
+        """, (requirement_id,))
+
+        if not requirement:
+            return Response({'error': 'Requirement not found'},
+                          status=status.HTTP_404_NOT_FOUND)
+
+        site_id = requirement['site_id']
+
+        # Update the requirement
+        update_query = """
+            UPDATE client_requirements
+            SET description = %s, amount = %s, updated_at = NOW()
+            WHERE requirement_id = %s
+        """
+
+        execute_query(update_query, (
+            description or requirement['description'],
+            amount if amount is not None else requirement['amount'],
+            requirement_id
+        ))
+
+        # Get updated values and user info for notification
+        user_info = fetch_one("""
+            SELECT full_name FROM users WHERE id = %s
+        """, (user_id,))
+
+        site_info = fetch_one("""
+            SELECT site_name FROM sites WHERE id = %s
+        """, (site_id,))
+
+        user_name = user_info['full_name'] if user_info else 'Unknown User'
+        site_name = site_info['site_name'] if site_info else 'Unknown Site'
+        final_amount = amount if amount is not None else requirement['amount']
+
+        # Create notification for admin
+        notification_id = str(uuid.uuid4())
+        notification_message = f"{user_name} updated a site requirement: {description or requirement['description']} (₹{final_amount})"
+
+        notification_query = """
+            INSERT INTO notifications
+            (id, site_id, entry_type, message, supervisor_id, supervisor_name, site_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+
+        execute_query(notification_query, (
+            notification_id,
+            site_id,
+            'Site Requirement',
+            notification_message,
+            user_id,
+            user_name,
+            site_name
+        ))
+
+        return Response({
+            'message': 'Client requirement updated successfully',
+            'requirement_id': requirement_id,
+            'notification_id': notification_id
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"❌ Error updating client requirement: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

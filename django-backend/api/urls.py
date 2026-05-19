@@ -175,6 +175,7 @@ urlpatterns = [
     path('construction/accountant/all-entries/', views_construction.get_all_entries_for_accountant, name='accountant-all-entries'),
     path('construction/accountant/all-photos/', views_construction.get_all_site_photos_for_accountant, name='accountant-all-photos'),
     path('accountant/add-client-requirement/', views_construction.add_client_requirement, name='add-client-requirement'),
+    path('accountant/update-client-requirement/<uuid:requirement_id>/', views_construction.update_client_requirement, name='update-client-requirement'),
     path('admin/client-requirements/', views_construction.get_client_requirements, name='get-client-requirements'),
     
     # ============================================

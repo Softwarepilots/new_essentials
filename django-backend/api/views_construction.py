@@ -3636,26 +3636,29 @@ def submit_extra_cost(request):
     POST /api/construction/submit-extra-cost/
     """
     try:
-        user_id = request.user['user_id']
+        print(f'📦 [EXTRA_COST] Request data: {request.data}')
+        user_id = request.user.get('user_id') or request.user.get('id')
         site_id = request.data.get('site_id')
         amount = request.data.get('amount')
         description = request.data.get('description', '')
-        notes = request.data.get('notes', '')
-        
+
+        print(f'📦 [EXTRA_COST] Parsed: user_id={user_id}, site_id={site_id}, amount={amount}, description={description}')
+
         if not all([site_id, amount]):
-            return Response({'error': 'site_id and amount are required'}, 
+            print(f'📦 [EXTRA_COST] Validation failed: site_id={site_id}, amount={amount}')
+            return Response({'error': 'site_id and amount are required'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Validate amount
         try:
             amount = float(amount)
             if amount <= 0:
-                return Response({'error': 'Amount must be greater than 0'}, 
+                return Response({'error': 'Amount must be greater than 0'},
                               status=status.HTTP_400_BAD_REQUEST)
         except ValueError:
-            return Response({'error': 'Invalid amount format'}, 
+            return Response({'error': 'Invalid amount format'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Insert extra cost
         extra_cost_id = str(uuid.uuid4())
         print(f'📦 [EXTRA_COST] Inserting: id={extra_cost_id}, site_id={site_id}, description={description}, amount={amount}')
@@ -3669,17 +3672,22 @@ def submit_extra_cost(request):
         print(f'📦 [EXTRA_COST] Insert result: {result}')
 
         if not result:
+            print(f'📦 [EXTRA_COST] Insert failed, returning 500 error')
             return Response({
                 'error': 'Failed to submit extra cost - database error'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        print(f'📦 [EXTRA_COST] Insert succeeded, returning 201')
         return Response({
             'message': 'Extra cost submitted successfully',
             'extra_cost_id': extra_cost_id,
             'amount': amount
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
+        print(f'📦 [EXTRA_COST] Exception: {str(e)}')
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

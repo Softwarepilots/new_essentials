@@ -3641,7 +3641,7 @@ def submit_extra_cost(request):
         logger.info(f'📦 [EXTRA_COST] VIEW EXECUTED - Request data: {request.data}')
         print(f'📦 [EXTRA_COST] REQUEST DATA: {request.data}', flush=True)
 
-        user_id = request.user.get('user_id') or request.user.get('id')
+        user_id = request.user['user_id']
         site_id = request.data.get('site_id')
         amount = request.data.get('amount')
         description = request.data.get('description', '')
@@ -3665,13 +3665,13 @@ def submit_extra_cost(request):
 
         # Insert extra cost
         extra_cost_id = str(uuid.uuid4())
-        print(f'📦 [EXTRA_COST] Inserting: id={extra_cost_id}, site_id={site_id}, description={description}, amount={amount}')
+        print(f'📦 [EXTRA_COST] Inserting: id={extra_cost_id}, site_id={site_id}, description={description}, amount={amount}, uploaded_by={user_id}')
 
         result = execute_query("""
             INSERT INTO extra_works
-            (id, site_id, description, amount)
-            VALUES (%s, %s, %s, %s)
-        """, (extra_cost_id, site_id, description, amount))
+            (id, site_id, description, amount, uploaded_by)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (extra_cost_id, site_id, description, amount, user_id))
 
         print(f'📦 [EXTRA_COST] Insert result: {result}')
 
@@ -3707,14 +3707,16 @@ def submit_extra_cost(request):
 @permission_classes([IsAuthenticated])
 def get_extra_costs(request, site_id):
     """
-    Get all extra costs for a specific site
+    Get all extra costs for a specific site added by current user
     GET /api/construction/extra-costs/<site_id>/
     """
     try:
         import logging
         logger = logging.getLogger(__name__)
-        print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}', flush=True)
-        logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}')
+
+        user_id = request.user.id
+        print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_id={user_id}', flush=True)
+        logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_id={user_id}')
 
         extra_costs = fetch_all("""
             SELECT
@@ -3723,9 +3725,9 @@ def get_extra_costs(request, site_id):
                 description,
                 amount
             FROM extra_works
-            WHERE site_id = %s
-            ORDER BY id DESC
-        """, (site_id,))
+            WHERE site_id = %s AND uploaded_by = %s
+            ORDER BY uploaded_at DESC
+        """, (site_id, user_id))
 
         print(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs', flush=True)
         logger.info(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs')

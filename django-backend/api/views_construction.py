@@ -15,6 +15,17 @@ import uuid
 import pytz
 
 
+# TEST ENDPOINT - Remove after debugging
+@csrf_exempt
+@api_view(['POST'])
+def test_material_balance(request):
+    """Test endpoint to verify POST requests work"""
+    print(f'✅ [TEST] Test endpoint called!')
+    print(f'✅ [TEST] Request method: {request.method}')
+    print(f'✅ [TEST] Request data: {request.data}')
+    return Response({'message': 'Test endpoint works!', 'received': request.data}, status=status.HTTP_200_OK)
+
+
 # ============================================
 # COMMON APIS (ALL ROLES)
 # ============================================

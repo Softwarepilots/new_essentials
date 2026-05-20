@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'auth_service.dart';
 
 class ConstructionService {
@@ -1370,6 +1373,40 @@ class ConstructionService {
   // SUPERVISOR: UPLOAD PHOTOS
   // ============================================
 
+  Future<List<int>> _compressImage(XFile photoFile) async {
+    try {
+      final bytes = await photoFile.readAsBytes();
+      final originalSize = bytes.length;
+
+      // Decode the image
+      final image = img.decodeImage(bytes);
+      if (image == null) {
+        print('⚠️ [COMPRESS] Could not decode image, using original');
+        return bytes;
+      }
+
+      // Resize image to max 1000x800px to reduce file size
+      final resized = img.copyResize(
+        image,
+        width: image.width > 1000 ? 1000 : image.width,
+        height: image.height > 800 ? 800 : image.height,
+        interpolation: img.Interpolation.linear,
+      );
+
+      // Encode back to JPEG with 85% quality
+      final compressedBytes = img.encodeJpg(resized, quality: 85);
+
+      final compressedSize = compressedBytes.length;
+      final reduction = ((1 - (compressedSize / originalSize)) * 100).toStringAsFixed(1);
+      print('📸 [COMPRESS] ${photoFile.name}: ${(originalSize / 1024).toStringAsFixed(0)}KB → ${(compressedSize / 1024).toStringAsFixed(0)}KB ($reduction% reduction)');
+
+      return compressedBytes;
+    } catch (e) {
+      print('⚠️ [COMPRESS] Error compressing image: $e, using original');
+      return await photoFile.readAsBytes();
+    }
+  }
+
   Future<Map<String, dynamic>> uploadSupervisorPhotos({
     required String siteId,
     required List<dynamic> photos, // List of XFile
@@ -1390,12 +1427,13 @@ class ConstructionService {
       request.fields['site_id'] = siteId.toString();
       request.fields['time_of_day'] = timeOfDay;
 
-      // Add photos - Web and Mobile compatible
+      // Add photos with compression - Web and Mobile compatible
       for (var photo in photos) {
-        final bytes = await photo.readAsBytes();
+        final compressedBytes = await _compressImage(photo);
+
         final file = http.MultipartFile.fromBytes(
           'photos',
-          bytes,
+          compressedBytes,
           filename: photo.name,
         );
         request.files.add(file);

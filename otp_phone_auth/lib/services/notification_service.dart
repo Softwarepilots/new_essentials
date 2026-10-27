@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -10,7 +10,7 @@ class NotificationService {
   NotificationService._internal();
 
   final _authService = AuthService();
-  static const String baseUrl = 'http://187.127.164.22/api';
+  static const String baseUrl = 'http://192.168.1.6:8001/api';
 
   Future<Map<String, String>> _getHeaders() async {
     final token = await _authService.getToken();
@@ -126,28 +126,6 @@ class NotificationService {
       debugPrint('[FCM] token registered with backend');
     } catch (e) {
       debugPrint('[FCM] token registration error: $e');
-    }
-  }
-
-  /// Called from the guest check-in screen to push an alert to the admin.
-  /// No auth header — the guest is not logged in.
-  Future<void> sendGuestCheckinNotification({
-    required String guestName,
-    required String guestPhone,
-    required String ref,
-  }) async {
-    try {
-      await http.post(
-        Uri.parse('$baseUrl/notifications/guest-checkin/'),
-        headers: const {'Content-Type': 'application/json'},
-        body: json.encode({
-          'guest_name': guestName,
-          'guest_phone': guestPhone,
-          'ref': ref,
-        }),
-      );
-    } catch (e) {
-      debugPrint('[FCM] guest checkin notification error: $e');
     }
   }
 

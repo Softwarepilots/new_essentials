@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../utils/app_colors.dart';
 import 'package:http/http.dart' as http;
@@ -15,7 +15,7 @@ class SimpleBudgetScreen extends StatefulWidget {
 
 class _SimpleBudgetScreenState extends State<SimpleBudgetScreen> {
   final _authService = AuthService();
-  static const String baseUrl = 'http://187.127.164.22/api';
+  static const String baseUrl = 'http://192.168.1.6:8001/api';
 
   // Cascading dropdown state
   String? _selectedArea;

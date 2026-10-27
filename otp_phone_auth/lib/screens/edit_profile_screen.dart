@@ -57,9 +57,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       final result = await _authService.updateProfile(
         name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
-        address: _addressController.text.trim(),
       );
 
       if (!mounted) return;

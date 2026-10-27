@@ -35,24 +35,17 @@ class _AccountantCompareScreenState extends State<AccountantCompareScreen> {
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(provider.selectedDate);
 
-      print('🔍 [COMPARE] Loading data for date: $dateStr');
-
-      // Load supervisor entries
-      final supervisorData = await _constructionService.getEntriesByDateAndRole(dateStr, 'Supervisor');
-      print('📊 [COMPARE] Supervisor entries: ${supervisorData.length}');
-
-      // Load site engineer entries
-      final engineerData = await _constructionService.getEntriesByDateAndRole(dateStr, 'Site Engineer');
-      print('📊 [COMPARE] Engineer entries: ${engineerData.length}');
-
-      // Load accountant (custom) entries
-      final accountantData = await _constructionService.getEntriesByDateAndRole(dateStr, 'Accountant');
-      print('📊 [COMPARE] Accountant entries: ${accountantData.length}');
+      // Fetch all three roles in parallel
+      final results = await Future.wait([
+        _constructionService.getEntriesByDateAndRole(dateStr, 'Supervisor'),
+        _constructionService.getEntriesByDateAndRole(dateStr, 'Site Engineer'),
+        _constructionService.getEntriesByDateAndRole(dateStr, 'Accountant'),
+      ]);
 
       if (mounted) {
-        provider.setSupervisorEntries(supervisorData);
-        provider.setEngineerEntries(engineerData);
-        provider.setAccountantEntries(accountantData);
+        provider.setSupervisorEntries(results[0]);
+        provider.setEngineerEntries(results[1]);
+        provider.setAccountantEntries(results[2]);
         provider.setIsLoading(false);
       }
     } catch (e) {
@@ -836,28 +829,22 @@ Future<void> _selectDate() async {
       final labourEntries = selectedEntry['labour_entries'] as List;
       final dateStr = DateFormat('yyyy-MM-dd').format(provider.selectedDate);
 
-      // Fetch labour rates for each labour type
-      final labourEntriesWithRates = <Map<String, dynamic>>[];
-      for (var labour in labourEntries) {
-        final labourType = labour['labour_type'];
-        final labourCount = labour['labour_count'];
+      // Fetch labour rates once for all labour types
+      final ratesResponse = await _constructionService.getLabourRates('global');
+      final rates = ratesResponse['rates'] as List? ?? [];
 
-        // Get rate from backend (global rates)
-        final ratesResponse = await _constructionService.getLabourRates('global');
-        final rates = ratesResponse['rates'] as List? ?? [];
+      final labourEntriesWithRates = labourEntries.map((labour) {
+        final labourType = labour['labour_type'];
         final rateData = rates.firstWhere(
           (r) => r['labour_type'] == labourType,
-          orElse: () => {'daily_rate': 600.0}, // Default fallback
+          orElse: () => {'daily_rate': 600.0},
         );
-
-        final dailyRate = (rateData['daily_rate'] as num).toDouble();
-
-        labourEntriesWithRates.add({
+        return {
           'labour_type': labourType,
-          'labour_count': labourCount,
-          'daily_rate': dailyRate,
-        });
-      }
+          'labour_count': labour['labour_count'],
+          'daily_rate': (rateData['daily_rate'] as num).toDouble(),
+        };
+      }).toList();
 
       // Call confirm cash entry API
       final result = await _constructionService.confirmCashEntry(
@@ -920,31 +907,22 @@ Future<void> _selectDate() async {
       final labourEntries = entry['labour_entries'] as List;
       final dateStr = DateFormat('yyyy-MM-dd').format(provider.selectedDate);
 
-      print('✅ [CONFIRM] Starting confirmation - siteId: $siteId, entryType: $entryType, date: $dateStr');
+      // Fetch labour rates once for all labour types
+      final ratesResponse = await _constructionService.getLabourRates('global');
+      final rates = ratesResponse['rates'] as List? ?? [];
 
-      // Fetch labour rates for each labour type
-      final labourEntriesWithRates = <Map<String, dynamic>>[];
-      for (var labour in labourEntries) {
+      final labourEntriesWithRates = labourEntries.map((labour) {
         final labourType = labour['labour_type'];
-        final labourCount = labour['labour_count'];
-
-        final ratesResponse = await _constructionService.getLabourRates('global');
-        final rates = ratesResponse['rates'] as List? ?? [];
         final rateData = rates.firstWhere(
           (r) => r['labour_type'] == labourType,
           orElse: () => {'daily_rate': 600.0},
         );
-
-        final dailyRate = (rateData['daily_rate'] as num).toDouble();
-
-        labourEntriesWithRates.add({
+        return {
           'labour_type': labourType,
-          'labour_count': labourCount,
-          'daily_rate': dailyRate,
-        });
-      }
-
-      print('✅ [CONFIRM] Prepared ${labourEntriesWithRates.length} labour entries with rates');
+          'labour_count': labour['labour_count'],
+          'daily_rate': (rateData['daily_rate'] as num).toDouble(),
+        };
+      }).toList();
 
       // Confirm the entry
       final result = await _constructionService.confirmCashEntry(

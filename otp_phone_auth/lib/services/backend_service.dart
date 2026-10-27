@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,7 +11,7 @@ class BackendService {
   // Django backend URL - change this to your computer's IP for physical device
   // For emulator: http://10.0.2.2:8000/api
   // For physical device: http://YOUR_COMPUTER_IP:8000/api
-  static const String baseUrl = 'http://187.127.164.22/api';
+  static const String baseUrl = 'http://192.168.1.6:8001/api';
   
   String? _jwtToken;
   

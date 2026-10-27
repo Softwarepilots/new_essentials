@@ -25,7 +25,10 @@ class AuthProvider with ChangeNotifier {
   // Initialize - check if user is already logged in
   Future<void> initialize() async {
     _isLoading = true;
-    notifyListeners();
+    // Defer first notification — initialize() is called from initState
+    // which runs during build; calling notifyListeners() synchronously here
+    // triggers "setState() called during build".
+    Future.microtask(notifyListeners);
 
     try {
       final userData = await _authService.getCurrentUser();

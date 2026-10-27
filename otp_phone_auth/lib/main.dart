@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:provider/provider.dart';
 import 'services/push_notification_service.dart';
+import 'services/location_tracking_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/supervisor_dashboard_feed.dart';
 import 'screens/admin_dashboard.dart';
@@ -38,6 +39,9 @@ void main() async {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
+
+  // Supervisor location sharing (mobile only; started from the supervisor dashboard)
+  await LocationTrackingService.configure();
 
   runApp(const MyApp());
 }

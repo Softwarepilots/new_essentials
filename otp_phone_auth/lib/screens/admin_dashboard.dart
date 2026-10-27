@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -20,6 +20,9 @@ import 'admin_client_complaints_screen.dart';
 import 'admin_manage_users_screen.dart';
 import 'admin_all_working_sites_screen.dart';
 import 'admin_manage_materials_screen.dart';
+import 'admin_catalogue_screen.dart';
+import 'admin_supervisor_locations_screen.dart';
+import '../widgets/nav_badge.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({Key? key}) : super(key: key);
@@ -46,7 +49,6 @@ class _AdminDashboardState extends State<AdminDashboard>
   String _profilePhone = '';
 
   // Sites tab state
-  static const String _sitesBaseUrl = 'http://187.127.164.22/api';
   List<String> _areas = [];
   List<String> _streets = [];
   List<Map<String, dynamic>> _sites = [];
@@ -68,10 +70,26 @@ class _AdminDashboardState extends State<AdminDashboard>
   List<Map<String, dynamic>> _guestVisitors = [];
   bool _guestVisitorsLoading = false;
 
+  // Bottom-nav badges. Guests count as new until the admin opens the Guests
+  // list (Alerts tab → Guests); the time it was last opened is persisted.
+  static const _kGuestsSeenKey = 'admin_guests_last_seen';
+  DateTime? _guestsLastSeen;
+  int _openIssuesCount = 0;
+  final _constructionService = ConstructionService();
+
+  int get _newGuestCount {
+    final seen = _guestsLastSeen;
+    return _guestVisitors.where((g) {
+      final time = DateTime.tryParse(g['visit_time'] ?? '');
+      return time != null && (seen == null || time.isAfter(seen));
+    }).length;
+  }
+
   @override
   void initState() {
     super.initState();
-    _notifTabController = TabController(length: 3, vsync: this);
+    _notifTabController = TabController(length: 3, vsync: this)
+      ..addListener(_markGuestsSeenIfVisible);
     _navSubscription = NotificationNavigationService().stream.listen((dest) {
       if (!mounted) return;
       setState(() => _selectedIndex = dest.mainTab);
@@ -80,7 +98,9 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
     _loadAdminUser();
     _loadData();
+    _loadGuestsLastSeen();
     _loadGuestVisitors(); // always load guests at startup
+    _refreshBadgeCounts();
     _loadAreas();
     _startBackgroundRefresh();
     // Register this device for push notifications and get FCM token
@@ -104,6 +124,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         _loadGuestVisitors(); // always refresh guests
         if (_selectedIndex == 2) {
           _loadNotifications(forceRefresh: true);
+        } else {
+          _refreshBadgeCounts();
         }
       },
     );
@@ -148,8 +170,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     if (_guestVisitorsLoading) return;
     setState(() => _guestVisitorsLoading = true);
     try {
-      final authService = AuthService();
-      final token = await authService.getToken();
+      final token = await _authService.getToken();
       final response = await http.get(
         Uri.parse('${AuthService.baseUrl}/notifications/guest-checkins/'),
         headers: {
@@ -171,6 +192,7 @@ class _AdminDashboardState extends State<AdminDashboard>
           };
         }).toList();
         if (mounted) setState(() => _guestVisitors = list);
+        _markGuestsSeenIfVisible();
       } else {
         debugPrint('Guest checkins fetch failed: ${response.statusCode}');
       }
@@ -184,60 +206,85 @@ class _AdminDashboardState extends State<AdminDashboard>
     if (mounted) setState(() => _guestVisitors = []);
   }
 
+  Future<void> _loadGuestsLastSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_kGuestsSeenKey);
+    if (saved != null && mounted) {
+      setState(() => _guestsLastSeen = DateTime.tryParse(saved));
+    }
+  }
+
+  /// Clears the guest badge once the admin is looking at the Guests list.
+  Future<void> _markGuestsSeenIfVisible() async {
+    if (_selectedIndex != 2 || _notifTabController?.index != 2) return;
+    if (_newGuestCount == 0) return;
+    final now = DateTime.now();
+    setState(() => _guestsLastSeen = now);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kGuestsSeenKey, now.toIso8601String());
+  }
+
+  /// Silent refresh of the bottom-nav badge counts (no error snackbars):
+  /// unread notifications and open client complaints.
+  Future<void> _refreshBadgeCounts() async {
+    try {
+      final result = await _notificationService.getNotifications();
+      if (result['success'] == true && mounted) {
+        setState(() => _unreadCount = result['unread_count'] ?? 0);
+      }
+    } catch (e) {
+      debugPrint('Badge: notifications count failed: $e');
+    }
+    try {
+      final response = await _constructionService
+          .getClientComplaintsForArchitect(status: 'OPEN');
+      final complaints = response['complaints'] as List?;
+      if (complaints != null && mounted) {
+        setState(() => _openIssuesCount = complaints.length);
+      }
+    } catch (e) {
+      debugPrint('Badge: open issues count failed: $e');
+    }
+  }
+
   Future<void> _loadNotifications({bool forceRefresh = false}) async {
-    // Load from persistent cache first (instant display)
-    if (!forceRefresh && !_notificationsLoaded) {
+    // Show cached data instantly while the API call runs in background
+    if (!_notificationsLoaded) {
       final cached = await CacheService.loadNotifications();
       if (cached != null && mounted) {
         setState(() {
           _notifications = cached['notifications'];
           _unreadCount = cached['unread_count'];
-          _notificationsLoaded = true;
         });
-        print('✅ [NOTIFICATIONS] Loaded ${_notifications.length} from persistent cache');
       }
     }
-    
-    // Skip API call if already loaded and not forcing refresh
+
+    // Skip fresh API call only if already refreshed this session and not forced
     if (_notificationsLoaded && !forceRefresh) return;
-    
-    setState(() => _notificationsLoading = true);
+
+    if (mounted) setState(() => _notificationsLoading = true);
 
     try {
-      print('🔍 [NOTIFICATIONS] Loading notifications from API...');
       final result = await _notificationService.getNotifications();
-      
-      print('🔍 [NOTIFICATIONS] Result: ${result['success']}');
-      print('🔍 [NOTIFICATIONS] Notifications count: ${result['notifications']?.length ?? 0}');
-      print('🔍 [NOTIFICATIONS] Unread count: ${result['unread_count']}');
-      
+
       if (result['success'] == true && mounted) {
         final notifications = List<Map<String, dynamic>>.from(result['notifications'] ?? []);
         final unreadCount = result['unread_count'] ?? 0;
-        
-        // Save to persistent cache
         await CacheService.saveNotifications(notifications, unreadCount);
-        
         setState(() {
           _notifications = notifications;
           _unreadCount = unreadCount;
           _notificationsLoaded = true;
         });
-        
-        print('✅ [NOTIFICATIONS] Loaded ${_notifications.length} notifications and saved to cache');
-      } else {
-        print('❌ [NOTIFICATIONS] Error: ${result['error']}');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${result['error'] ?? 'Failed to load notifications'}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${result['error'] ?? 'Failed to load notifications'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      print('❌ [NOTIFICATIONS] Exception: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -247,9 +294,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _notificationsLoading = false);
-      }
+      if (mounted) setState(() => _notificationsLoading = false);
     }
   }
 
@@ -261,7 +306,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         _loadNotifications(forceRefresh: true); // Refresh list
       }
     } catch (e) {
-      print('Error marking notification as read: $e');
+      debugPrint('Error marking notification as read: $e');
     }
   }
 
@@ -279,7 +324,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         _loadNotifications(forceRefresh: true); // Refresh list
       }
     } catch (e) {
-      print('Error marking all notifications as read: $e');
+      debugPrint('Error marking all notifications as read: $e');
     }
   }
 
@@ -372,6 +417,8 @@ class _AdminDashboardState extends State<AdminDashboard>
       _NavItem(Icons.report_problem_outlined, Icons.report_problem, 'Issues'),
       _NavItem(Icons.person_outline, Icons.person, 'Profile'),
     ];
+    // Story, Sites, Alerts, Issues, Profile
+    final badges = [0, 0, _unreadCount + _newGuestCount, _openIssuesCount, 0];
 
     return Container(
       decoration: BoxDecoration(
@@ -393,10 +440,13 @@ class _AdminDashboardState extends State<AdminDashboard>
               final selected = _selectedIndex == i;
               final item = items[i];
               return GestureDetector(
-                onTap: () => setState(() {
-                  _selectedIndex = i;
-                  _loadData();
-                }),
+                onTap: () {
+                  setState(() {
+                    _selectedIndex = i;
+                    _loadData();
+                  });
+                  _markGuestsSeenIfVisible();
+                },
                 behavior: HitTestBehavior.opaque,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
@@ -421,11 +471,13 @@ class _AdminDashboardState extends State<AdminDashboard>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Badge dot for Alerts tab
-                      Icon(
-                        selected ? item.activeIcon : item.icon,
-                        color: selected ? Colors.white : const Color(0xFF6B7280),
-                        size: 22,
+                      NavBadge(
+                        count: badges[i],
+                        child: Icon(
+                          selected ? item.activeIcon : item.icon,
+                          color: selected ? Colors.white : const Color(0xFF6B7280),
+                          size: 22,
+                        ),
                       ),
                       if (selected) ...[
                         const SizedBox(width: 6),
@@ -452,7 +504,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   String _getAppBarTitle() {
     switch (_selectedIndex) {
       case 0:
-        return ' Site Story';
+        return 'Site Story';
       case 1:
         return 'Site Management';
       case 2:
@@ -483,26 +535,22 @@ class _AdminDashboardState extends State<AdminDashboard>
     setState(() => _sitesLoading = true);
     try {
       final token = await _authService.getToken();
-      print('🔍 Loading areas from: $_sitesBaseUrl/construction/areas/');
       final res = await http.get(
-        Uri.parse('$_sitesBaseUrl/construction/areas/'),
+        Uri.parse('${AuthService.baseUrl}/construction/areas/'),
         headers: {'Authorization': 'Bearer ${token ?? ''}'},
       );
-      print('🔍 Areas response status: ${res.statusCode}');
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
-        print('🔍 Areas data: $data');
         if (mounted) {
           setState(() {
             _areas = List<String>.from(data['areas'] ?? []);
           });
         }
-        print('🔍 Loaded ${_areas.length} areas');
       } else {
-        print('❌ Failed to load areas: ${res.statusCode} - ${res.body}');
+        debugPrint('Failed to load areas: ${res.statusCode}');
       }
     } catch (e) {
-      print('❌ Error loading areas: $e');
+      debugPrint('❌ Error loading areas: $e');
     }
     if (mounted) setState(() => _sitesLoading = false);
   }
@@ -529,7 +577,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     try {
       final token = await _authService.getToken();
       final res = await http.get(
-        Uri.parse('$_sitesBaseUrl/construction/streets/${Uri.encodeComponent(area)}/'),
+        Uri.parse('${AuthService.baseUrl}/construction/streets/${Uri.encodeComponent(area)}/'),
         headers: {'Authorization': 'Bearer ${token ?? ''}'},
       );
       if (res.statusCode == 200) {
@@ -544,7 +592,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         }
       }
     } catch (e) {
-      print('❌ Error loading streets: $e');
+      debugPrint('❌ Error loading streets: $e');
     }
     if (mounted) setState(() => _sitesLoading = false);
   }
@@ -569,7 +617,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       final token = await _authService.getToken();
       final res = await http.get(
         Uri.parse(
-            '$_sitesBaseUrl/construction/sites/?area=${Uri.encodeComponent(area)}&street=${Uri.encodeComponent(street)}'),
+            '${AuthService.baseUrl}/construction/sites/?area=${Uri.encodeComponent(area)}&street=${Uri.encodeComponent(street)}'),
         headers: {'Authorization': 'Bearer ${token ?? ''}'},
       );
       if (res.statusCode == 200) {
@@ -584,7 +632,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         }
       }
     } catch (e) {
-      print('❌ Error loading sites: $e');
+      debugPrint('❌ Error loading sites: $e');
     }
     if (mounted) setState(() => _sitesLoading = false);
   }
@@ -1573,14 +1621,14 @@ class _AdminDashboardState extends State<AdminDashboard>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: isRead ? Colors.transparent : entryColor.withOpacity(0.3),
+          color: isRead ? Colors.transparent : entryColor.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
       child: InkWell(
         onTap: () {
           if (!isRead) {
-            _markNotificationAsRead(notification['id'].toString());
+            _markNotificationAsRead(notification['id']?.toString() ?? '');
           }
         },
         borderRadius: BorderRadius.circular(12),
@@ -1594,7 +1642,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: entryColor.withOpacity(0.1),
+                      color: entryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
@@ -1873,6 +1921,32 @@ class _AdminDashboardState extends State<AdminDashboard>
             subtitle: 'Add a new custom role',
             onTap: _showCreateRoleDialog,
           ),
+          _buildProfileActionTile(
+            icon: Icons.share_location,
+            color: const Color(0xFF059669),
+            title: 'Supervisor Locations',
+            subtitle: 'Live map during work hours',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => const AdminSupervisorLocationsScreen()),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Guest App ──
+          _buildSectionHeader('Guest App'),
+          _buildProfileActionTile(
+            icon: Icons.storefront_outlined,
+            color: const Color(0xFF7C3AED),
+            title: 'Guest Catalogue',
+            subtitle: 'Items guests see after they check in',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminCatalogueScreen()),
+            ),
+          ),
 
           const SizedBox(height: 20),
 
@@ -2077,10 +2151,12 @@ class _AdminDashboardState extends State<AdminDashboard>
                       setDS(() => isSaving = true);
                       final newName = nameCtrl.text.trim();
                       final newPhone = phoneCtrl.text.trim();
-                      final result = await ConstructionService().updateProfile(
-                          fullName: newName, phone: newPhone);
-                      if (!ctx.mounted) return;
-                      Navigator.pop(ctx);
+                      final result = await _authService.updateProfile(
+                        name: newName.isNotEmpty ? newName : _profileName,
+                        phone: newPhone.isNotEmpty ? newPhone : _profilePhone,
+                      );
+                      if (!mounted) return;
+                      if (ctx.mounted) Navigator.pop(ctx);
                       if (result['success'] == true) {
                         setState(() {
                           _profileName =
@@ -2110,8 +2186,10 @@ class _AdminDashboardState extends State<AdminDashboard>
         ),
       ),
     );
-    nameCtrl.dispose();
-    phoneCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      phoneCtrl.dispose();
+    });
   }
 
   // ── Manage Users ──────────────────────────────────────────
@@ -2218,7 +2296,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                             if (value != null) {
                               final token = await _authService.getToken();
                               final res = await http.get(
-                                Uri.parse('$_sitesBaseUrl/construction/streets/${Uri.encodeComponent(value)}/'),
+                                Uri.parse('${AuthService.baseUrl}/construction/streets/${Uri.encodeComponent(value)}/'),
                                 headers: {'Authorization': 'Bearer ${token ?? ''}'},
                               );
                               if (res.statusCode == 200) {
@@ -2359,7 +2437,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                       try {
                         final token = await _authService.getToken();
                         final response = await http.post(
-                          Uri.parse('$_sitesBaseUrl/construction/create-site/'),
+                          Uri.parse('${AuthService.baseUrl}/construction/create-site/'),
                           headers: {
                             'Content-Type': 'application/json',
                             'Authorization': 'Bearer ${token ?? ''}',
@@ -2443,10 +2521,12 @@ class _AdminDashboardState extends State<AdminDashboard>
         ),
       ),
     );
-    customerNameCtrl.dispose();
-    siteNameCtrl.dispose();
-    newAreaCtrl.dispose();
-    newStreetCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      customerNameCtrl.dispose();
+      siteNameCtrl.dispose();
+      newAreaCtrl.dispose();
+      newStreetCtrl.dispose();
+    });
   }
 
   // ── Create User ───────────────────────────────────────────
@@ -2561,22 +2641,22 @@ class _AdminDashboardState extends State<AdminDashboard>
                               value: r, child: Text(r)))
                           .toList(),
                       onChanged: (v) async {
-                        print('🎯 ROLE CHANGED TO: $v');
+                        debugPrint('🎯 ROLE CHANGED TO: $v');
                         setDS(() => selectedRole = v);
                         
                         // Load sites if Client role is selected
                         final isClient = v?.toLowerCase() == 'client';
-                        print('🎯 Is client role: $isClient');
-                        print('🎯 All sites count: ${allSites.length}');
-                        print('🎯 Loading sites: $loadingSites');
+                        debugPrint('🎯 Is client role: $isClient');
+                        debugPrint('🎯 All sites count: ${allSites.length}');
+                        debugPrint('🎯 Loading sites: $loadingSites');
                         
                         if (isClient && allSites.isEmpty) {
-                          print('🎯 Starting to load sites...');
+                          debugPrint('🎯 Starting to load sites...');
                           setDS(() => loadingSites = true);
                           try {
                             final token = await _authService.getToken();
                             final url = '${AuthService.baseUrl}/construction/all-sites/';
-                            print('🎯 Fetching from: $url');
+                            debugPrint('🎯 Fetching from: $url');
                             
                             final res = await http.get(
                               Uri.parse(url),
@@ -2586,24 +2666,24 @@ class _AdminDashboardState extends State<AdminDashboard>
                               },
                             );
                             
-                            print('🎯 Response: ${res.statusCode}');
+                            debugPrint('🎯 Response: ${res.statusCode}');
                             
                             if (res.statusCode == 200) {
                               final data = json.decode(res.body);
                               final sites = List<Map<String, dynamic>>.from(data['sites'] ?? []);
-                              print('🎯 ✅ Loaded ${sites.length} sites');
+                              debugPrint('🎯 ✅ Loaded ${sites.length} sites');
                               
                               setDS(() {
                                 allSites = sites;
                                 loadingSites = false;
                               });
-                              print('🎯 State updated - allSites now has ${allSites.length} items');
+                              debugPrint('🎯 State updated - allSites now has ${allSites.length} items');
                             } else {
-                              print('🎯 ❌ Failed: ${res.statusCode}');
+                              debugPrint('🎯 ❌ Failed: ${res.statusCode}');
                               setDS(() => loadingSites = false);
                             }
                           } catch (e) {
-                            print('🎯 ❌ Error: $e');
+                            debugPrint('🎯 ❌ Error: $e');
                             setDS(() => loadingSites = false);
                           }
                         }
@@ -2616,10 +2696,10 @@ class _AdminDashboardState extends State<AdminDashboard>
                     if (isClientRole) ...[
                       Builder(
                         builder: (context) {
-                          print('🎯 RENDERING SITE SELECTION UI');
-                          print('🎯 isClientRole: $isClientRole');
-                          print('🎯 loadingSites: $loadingSites');
-                          print('🎯 allSites.length: ${allSites.length}');
+                          debugPrint('🎯 RENDERING SITE SELECTION UI');
+                          debugPrint('🎯 isClientRole: $isClientRole');
+                          debugPrint('🎯 loadingSites: $loadingSites');
+                          debugPrint('🎯 allSites.length: ${allSites.length}');
                           return Column(
                             children: [
                               const SizedBox(height: 16),
@@ -2813,11 +2893,13 @@ class _AdminDashboardState extends State<AdminDashboard>
         },
       ),
     );
-    nameCtrl.dispose();
-    usernameCtrl.dispose();
-    emailCtrl.dispose();
-    phoneCtrl.dispose();
-    passCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      usernameCtrl.dispose();
+      emailCtrl.dispose();
+      phoneCtrl.dispose();
+      passCtrl.dispose();
+    });
   }
 
   // ── Create Admin ──────────────────────────────────────────
@@ -2930,7 +3012,10 @@ class _AdminDashboardState extends State<AdminDashboard>
                               : Colors.red,
                         ));
                       } catch (e) {
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (ctx.mounted) {
+                          setDS(() => isSaving = false);
+                          Navigator.pop(ctx);
+                        }
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text('Error: $e'),
                           backgroundColor: Colors.red,
@@ -2949,11 +3034,13 @@ class _AdminDashboardState extends State<AdminDashboard>
         ),
       ),
     );
-    nameCtrl.dispose();
-    usernameCtrl.dispose();
-    emailCtrl.dispose();
-    phoneCtrl.dispose();
-    passCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nameCtrl.dispose();
+      usernameCtrl.dispose();
+      emailCtrl.dispose();
+      phoneCtrl.dispose();
+      passCtrl.dispose();
+    });
   }
 
   // ── Create Role ───────────────────────────────────────────
@@ -3037,7 +3124,10 @@ class _AdminDashboardState extends State<AdminDashboard>
                               : Colors.red,
                         ));
                       } catch (e) {
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (ctx.mounted) {
+                          setDS(() => isSaving = false);
+                          Navigator.pop(ctx);
+                        }
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text('Error: $e'),
                           backgroundColor: Colors.red,
@@ -3056,7 +3146,9 @@ class _AdminDashboardState extends State<AdminDashboard>
         ),
       ),
     );
-    roleCtrl.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      roleCtrl.dispose();
+    });
   }
 
   // ── Shared dialog field builder ───────────────────────────
@@ -3123,7 +3215,7 @@ class _AdminStoryTab extends StatefulWidget {
 
 class _AdminStoryTabState extends State<_AdminStoryTab> {
   final _service = ConstructionService();
-  static const _baseUrl = 'http://187.127.164.22';
+  static const _baseUrl = 'http://192.168.1.6:8001';
   static const _kViewedKey = 'story_viewed_timestamps'; // SharedPreferences key
 
   // All photos grouped by site
@@ -3226,7 +3318,7 @@ class _AdminStoryTabState extends State<_AdminStoryTab> {
         try {
           return DateTime.parse(raw).isAfter(cutoff);
         } catch (_) {
-          return true;
+          return false;
         }
       }).toList();
 
@@ -3693,7 +3785,7 @@ class _StoryViewerState extends State<_StoryViewer>
   late AnimationController _progressCtrl;
   static const _storyDuration = Duration(seconds: 5);
 
-  PageController? _pageController;
+  late PageController _pageController;
 
   @override
   void initState() {
@@ -3710,7 +3802,7 @@ class _StoryViewerState extends State<_StoryViewer>
   @override
   void dispose() {
     _progressCtrl.dispose();
-    _pageController?.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -3736,7 +3828,7 @@ class _StoryViewerState extends State<_StoryViewer>
 
   void _goTo(int index) {
     setState(() => _currentIndex = index);
-    _pageController?.jumpToPage(index);
+    _pageController.jumpToPage(index);
     _startProgress();
   }
 

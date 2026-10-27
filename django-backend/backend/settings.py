@@ -113,9 +113,26 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS settings - allow Flutter app
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS settings - allow Flutter app (web + mobile)
+# Using CORS_ALLOWED_ORIGIN_REGEXES instead of CORS_ALLOW_ALL_ORIGINS=True
+# because combining CORS_ALLOW_ALL_ORIGINS with CORS_ALLOW_CREDENTIALS sends
+# duplicate Access-Control-Allow-Origin headers, which browsers reject.
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'.*',  # Allow all origins — sends back the request's Origin instead of *
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # REST Framework settings
 REST_FRAMEWORK = {

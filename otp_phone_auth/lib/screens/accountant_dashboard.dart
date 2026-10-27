@@ -35,9 +35,6 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
   late String _profileName;
   late String _profilePhone;
 
-  // Background refresh timers
-  Timer? _labourRefreshTimer;
-  Timer? _materialRefreshTimer;
   Timer? _dashboardRefreshTimer;
 
   // Data variables
@@ -81,8 +78,6 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
 
   @override
   void dispose() {
-    _labourRefreshTimer?.cancel();
-    _materialRefreshTimer?.cancel();
     _dashboardRefreshTimer?.cancel();
     super.dispose();
   }
@@ -123,22 +118,10 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
   }
 
   void _startBackgroundRefresh() {
-    // Refresh labour entries every 60 seconds
-    _labourRefreshTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => _refreshLabourInBackground(),
-    );
-
-    // Refresh material entries every 60 seconds
-    _materialRefreshTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => _refreshMaterialInBackground(),
-    );
-
-    // Refresh dashboard every 90 seconds
+    // Single timer — refreshes everything every 90 seconds
     _dashboardRefreshTimer = Timer.periodic(
       const Duration(seconds: 90),
-      (_) => _refreshDashboardInBackground(),
+      (_) => _refreshAllDataInBackground(),
     );
   }
 
@@ -146,10 +129,14 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
     try {
       final provider = context.read<ConstructionProvider>();
 
-      // Call API only ONCE
-      await provider.loadAccountantData(forceRefresh: true);
+      // Load main entries + secondary counts in parallel
+      await Future.wait([
+        provider.loadAccountantData(forceRefresh: true),
+        _fetchWorkingSitesCount(),
+        _fetchCashEntriesSummary(),
+      ]);
 
-      // Get all data from provider
+      // Get all data from provider (already loaded above)
       final labourData = List<Map<String, dynamic>>.from(
         provider.accountantLabourEntries,
       );
@@ -157,14 +144,11 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
         provider.accountantMaterialEntries,
       );
 
-      // Fetch working sites count
-      await _fetchWorkingSitesCount();
-
-      // Fetch confirmed cash salary summary
-      await _fetchCashEntriesSummary();
-
-      // Fetch approved entries count from cash_entries
-      await _fetchApprovedEntriesCount();
+      // Approved count comes from the already-loaded all-entries response
+      if (mounted) {
+        _approvedEntriesCount = labourData.length;
+        context.read<AccountantDashboardProvider>().setLabourEntriesCount(labourData.length);
+      }
 
       // Load mismatch data (non-blocking)
       _loadMismatchData().catchError((e) {
@@ -202,21 +186,6 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
     } catch (e) {
       print('⚠️ [ACCOUNTANT] Background refresh failed: $e');
     }
-  }
-
-  Future<void> _refreshLabourInBackground() async {
-    // Deprecated - use _refreshAllDataInBackground instead
-    await _refreshAllDataInBackground();
-  }
-
-  Future<void> _refreshMaterialInBackground() async {
-    // Deprecated - use _refreshAllDataInBackground instead
-    await _refreshAllDataInBackground();
-  }
-
-  Future<void> _refreshDashboardInBackground() async {
-    // Deprecated - use _refreshAllDataInBackground instead
-    await _refreshAllDataInBackground();
   }
 
   Future<void> _fetchWorkingSitesCount() async {
@@ -300,38 +269,6 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
     }
   }
 
-  Future<void> _fetchApprovedEntriesCount() async {
-    try {
-      final provider = context.read<AccountantDashboardProvider>();
-      final authService = AuthService();
-      final token = await authService.getToken();
-
-      final response = await http
-          .get(
-            Uri.parse(
-              '${AuthService.baseUrl}/construction/accountant/all-entries/',
-            ),
-            headers: {'Authorization': 'Bearer $token'},
-          )
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        // Use total_labour_entries from API which counts from cash_entries table
-        final count = data['total_labour_entries'] as int? ?? 0;
-        if (mounted) {
-          _approvedEntriesCount = count;
-          provider.setLabourEntriesCount(count);
-        }
-        print('📊 [APPROVED COUNT] Total entries from cash_entries: $_approvedEntriesCount');
-      } else {
-        print('⚠️ [APPROVED COUNT] Failed: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ [APPROVED COUNT] Error: $e');
-    }
-  }
-
   Future<void> _loadSites() async {
     try {
       final authService = AuthService();
@@ -409,14 +346,17 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
         provider.accountantMaterialEntries,
       );
 
-      // Fetch working sites count
-      await _fetchWorkingSitesCount();
+      // Fetch secondary data in parallel
+      await Future.wait([
+        _fetchWorkingSitesCount(),
+        _fetchCashEntriesSummary(),
+      ]);
 
-      // Fetch confirmed cash salary summary
-      await _fetchCashEntriesSummary();
-
-      // Fetch approved entries count from cash_entries
-      await _fetchApprovedEntriesCount();
+      // Approved count reuses already-loaded labour data
+      if (mounted) {
+        _approvedEntriesCount = _labourEntries.length;
+        context.read<AccountantDashboardProvider>().setLabourEntriesCount(_labourEntries.length);
+      }
 
       // Load mismatch data
       await _loadMismatchData();

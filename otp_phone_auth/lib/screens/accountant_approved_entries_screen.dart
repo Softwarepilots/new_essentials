@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../services/construction_service.dart';
 import '../utils/app_colors.dart';
 import '../providers/accountant_entries_provider.dart';
@@ -60,54 +62,52 @@ class _AccountantApprovedEntriesScreenState
     }
   }
 
+  List<Map<String, dynamic>> _applyFilters(
+      List<Map<String, dynamic>> entries, AccountantEntriesProvider provider) {
+    return entries.where((entry) {
+      final entryArea = (entry['area'] as String?) ?? '';
+      final entryStreet = (entry['street'] as String?) ?? '';
+      if (provider.selectedArea != null && provider.selectedArea!.isNotEmpty) {
+        if (entryArea != provider.selectedArea) return false;
+      }
+      if (provider.selectedStreet != null && provider.selectedStreet!.isNotEmpty) {
+        if (entryStreet != provider.selectedStreet) return false;
+      }
+      return true;
+    }).toList();
+  }
+
   Future<void> _loadApprovedEntries() async {
     final provider = context.read<AccountantEntriesProvider>();
-    provider.setIsLoading(true);
+    final dateStr = DateFormat('yyyy-MM-dd').format(provider.selectedDate);
+    final cacheKey = 'approved_entries_$dateStr';
 
+    // Show cached data immediately (no loading spinner)
     try {
-      final dateStr = DateFormat('yyyy-MM-dd').format(provider.selectedDate);
-      print('📝 [APPROVED SCREEN] Loading approved entries for date: $dateStr');
-
-      final allEntries = await _constructionService.getApprovedEntries(dateStr);
-      print('📝 [APPROVED SCREEN] Received ${allEntries.length} entries from service');
-
-      if (allEntries.isNotEmpty) {
-        print('📝 [APPROVED SCREEN] First entry sample: ${allEntries.first}');
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(cacheKey);
+      if (raw != null) {
+        final cached = List<Map<String, dynamic>>.from(
+            (json.decode(raw) as List).map((e) => Map<String, dynamic>.from(e as Map)));
+        if (mounted) provider.setApprovedEntries(_applyFilters(cached, provider));
       }
+    } catch (_) {}
 
-      // Filter by area and street
-      final filteredEntries = allEntries.where((entry) {
-        final entryArea = (entry['area'] as String?) ?? '';
-        final entryStreet = (entry['street'] as String?) ?? '';
+    // Fetch fresh data in background
+    provider.setIsLoading(provider.approvedEntries.isEmpty);
+    try {
+      final allEntries = await _constructionService.getApprovedEntries(dateStr);
 
-        // Check area filter
-        if (provider.selectedArea != null && provider.selectedArea!.isNotEmpty) {
-          if (entryArea != provider.selectedArea) {
-            return false;
-          }
-        }
-
-        // Check street filter
-        if (provider.selectedStreet != null && provider.selectedStreet!.isNotEmpty) {
-          if (entryStreet != provider.selectedStreet) {
-            return false;
-          }
-        }
-
-        return true;
-      }).toList();
-
-      print('📝 [APPROVED SCREEN] After filtering: ${filteredEntries.length} entries');
+      // Persist to cache
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(cacheKey, json.encode(allEntries));
 
       if (mounted) {
-        provider.setApprovedEntries(filteredEntries);
+        provider.setApprovedEntries(_applyFilters(allEntries, provider));
         provider.setIsLoading(false);
       }
     } catch (e) {
-      print('❌ [APPROVED SCREEN] Error loading approved entries: $e');
-      if (mounted) {
-        provider.setIsLoading(false);
-      }
+      if (mounted) provider.setIsLoading(false);
     }
   }
 

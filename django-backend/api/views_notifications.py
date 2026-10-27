@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 import json
+import threading
 from datetime import datetime
 from .database import get_db_connection
 from .authentication import JWTAuthentication
@@ -203,12 +204,19 @@ def guest_checkin_notification(request):
         conn.close()
 
         # ── FCM push to all admin devices ──────────────────────────────────
-        send_push_to_admins(
-            title='🔔 New Guest Check-In',
-            body=f'{guest_name} ({guest_phone}) just checked in — Ref: {ref}',
-            data={'type': 'guest_checkin', 'guest_name': guest_name,
-                  'guest_phone': guest_phone, 'ref': ref},
-        )
+        # In a background thread: the check-in is already saved, and an FCM
+        # round trip (plus stale-token cleanup) can take 10–30 s, which made
+        # the guest app time out.
+        threading.Thread(
+            target=send_push_to_admins,
+            kwargs=dict(
+                title='🔔 New Guest Check-In',
+                body=f'{guest_name} ({guest_phone}) just checked in — Ref: {ref}',
+                data={'type': 'guest_checkin', 'guest_name': guest_name,
+                      'guest_phone': guest_phone, 'ref': ref},
+            ),
+            daemon=True,
+        ).start()
 
         return Response({
             'success': True,

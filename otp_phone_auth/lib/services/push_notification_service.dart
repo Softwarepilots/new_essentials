@@ -20,7 +20,9 @@ class PushNotificationService {
   factory PushNotificationService() => _instance;
   PushNotificationService._internal();
 
-  final _messaging = FirebaseMessaging.instance;
+  // Getter, not a field: FirebaseMessaging.instance throws on web, where
+  // Firebase is never initialised, even though initialise() bails out there.
+  FirebaseMessaging get _messaging => FirebaseMessaging.instance;
   final _local = FlutterLocalNotificationsPlugin();
   final _notificationService = NotificationService();
 

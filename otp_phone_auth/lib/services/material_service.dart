@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
@@ -8,7 +8,7 @@ class MaterialService {
   MaterialService._internal();
 
   final _authService = AuthService();
-  static const String baseUrl = 'http://187.127.164.22/api';
+  static const String baseUrl = 'http://192.168.1.6:8001/api';
 
   Future<Map<String, String>> _getHeaders() async {
     final token = await _authService.getToken();

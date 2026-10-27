@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'dart:async';
 import 'package:http/http.dart' as http;
@@ -100,7 +100,7 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen>
     try {
       final token = await _authService.getToken();
       final response = await http.get(
-        Uri.parse('http://187.127.164.22/api/admin/pending-users/'),
+        Uri.parse('http://192.168.1.6:8001/api/admin/pending-users/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${token ?? ''}',
@@ -152,7 +152,7 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen>
     try {
       final token = await _authService.getToken();
       final response = await http.get(
-        Uri.parse('http://187.127.164.22/api/admin/all-users/'),
+        Uri.parse('http://192.168.1.6:8001/api/admin/all-users/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${token ?? ''}',
@@ -188,7 +188,7 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen>
     try {
       final token = await _authService.getToken();
       final response = await http.post(
-        Uri.parse('http://187.127.164.22/api/admin/approve-user/$userId/'),
+        Uri.parse('http://192.168.1.6:8001/api/admin/approve-user/$userId/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${token ?? ''}',
@@ -226,7 +226,7 @@ class _AdminManageUsersScreenState extends State<AdminManageUsersScreen>
     try {
       final token = await _authService.getToken();
       final response = await http.post(
-        Uri.parse('http://187.127.164.22/api/admin/reject-user/$userId/'),
+        Uri.parse('http://192.168.1.6:8001/api/admin/reject-user/$userId/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${token ?? ''}',

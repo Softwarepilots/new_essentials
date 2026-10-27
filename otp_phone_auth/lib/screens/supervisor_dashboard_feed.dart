@@ -14,6 +14,7 @@ import 'supervisor_history_screen.dart';
 import '../widgets/supervisor_material_usage_dialog.dart';
 import 'supervisor_reports_screen.dart';
 import '../services/cache_service.dart';
+import '../widgets/location_sharing_banner.dart';
 
 class SupervisorDashboardFeed extends StatefulWidget {
   const SupervisorDashboardFeed({super.key});
@@ -278,7 +279,13 @@ class _SupervisorDashboardFeedState extends State<SupervisorDashboardFeed> {
     return Scaffold(
       backgroundColor: BWColors.background,
       body: currentScreen,
-      bottomNavigationBar: _buildBottomNav(),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const LocationSharingBanner(),
+          _buildBottomNav(),
+        ],
+      ),
     );
   }
 

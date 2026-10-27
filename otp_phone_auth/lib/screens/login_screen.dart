@@ -6,7 +6,6 @@ import '../utils/app_colors.dart';
 import '../models/user_model.dart';
 import 'registration_screen.dart';
 import 'pending_approval_screen.dart';
-import 'guest_registration_screen.dart';
 import 'supervisor_dashboard_feed.dart';
 import 'site_engineer_dashboard.dart';
 import 'accountant_dashboard.dart';
@@ -342,57 +341,6 @@ class _LoginScreenState extends State<LoginScreen>
                                       ),
                                     ),
                                   ],
-                                ),
-                                SizedBox(height: 14.h),
-
-                                // Guest entry button
-                                GestureDetector(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const GuestRegistrationScreen(),
-                                    ),
-                                  ),
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: 13.h,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: AppColors.deepNavy.withValues(
-                                          alpha: 0.35,
-                                        ),
-                                      ),
-                                      borderRadius: BorderRadius.circular(12.r),
-                                      color: AppColors.deepNavy.withValues(
-                                        alpha: 0.04,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.person_add_alt_1,
-                                          size: 18.sp,
-                                          color: AppColors.deepNavy.withValues(
-                                            alpha: 0.8,
-                                          ),
-                                        ),
-                                        SizedBox(width: 8.w),
-                                        Text(
-                                          'Guest Entry',
-                                          style: TextStyle(
-                                            color: AppColors.deepNavy,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14.sp,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                                 ),
                                 SizedBox(height: 8.h),
                               ],

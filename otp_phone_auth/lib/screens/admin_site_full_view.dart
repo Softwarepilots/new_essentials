@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
 import 'package:http/http.dart' as http;
@@ -25,7 +25,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
     with SingleTickerProviderStateMixin {
   final _authService = AuthService();
   final _exportService = ExportService();
-  static const String baseUrl = 'http://187.127.164.22/api';
+  static const String baseUrl = 'http://192.168.1.6:8001/api';
 
   late TabController _tabController;
 
@@ -1933,7 +1933,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
   }
 
   Widget _buildPhotoCard(Map<String, dynamic> photo) {
-    final imageUrl = 'http://187.127.164.22${photo['image_url']}';
+    final imageUrl = 'http://192.168.1.6:8001${photo['image_url']}';
     final uploadDate =
         photo['upload_date'] ?? photo['update_date'] ?? photo['created_at'];
     String timeDisplay = '';
@@ -2365,7 +2365,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
       // Construct full URL
       final fullUrl = fileUrl.startsWith('http')
           ? fileUrl
-          : 'http://187.127.164.22$fileUrl';
+          : 'http://192.168.1.6:8001$fileUrl';
 
       // Show loading dialog
       showDialog(

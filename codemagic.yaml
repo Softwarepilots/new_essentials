@@ -66,3 +66,62 @@ workflows:
         notify:
           success: true
           failure: true
+
+  guest-android-release-workflow:
+    name: Guest App - Android Release Build
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      vars:
+        PACKAGE_NAME: "com.essentialhomes.guest"
+      flutter: stable
+    scripts:
+      - name: Set up local.properties
+        script: | 
+          echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/guest_app/android/local.properties"
+      - name: Get Flutter packages
+        script: | 
+          cd guest_app
+          flutter packages pub get
+      - name: Build Release APK
+        script: | 
+          cd guest_app
+          flutter build apk --release
+    artifacts:
+      - guest_app/build/**/outputs/**/*.apk
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com
+        notify:
+          success: true
+          failure: true
+
+  guest-ios-workflow:
+    name: Guest App - iOS Build (unsigned)
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      vars:
+        BUNDLE_ID: "com.essentialhomes.guest"
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get Flutter packages
+        script: | 
+          cd guest_app
+          flutter packages pub get
+      - name: Build iOS (no code signing)
+        script: | 
+          cd guest_app
+          flutter build ios --release --no-codesign
+    artifacts:
+      - guest_app/build/ios/iphoneos/*.app
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com
+        notify:
+          success: true
+          failure: true

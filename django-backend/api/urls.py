@@ -14,6 +14,8 @@ from . import views_budget_management
 from . import views_export
 from . import views_client
 from . import views_notifications
+from . import views_catalogue
+from . import views_location
 from . import views_cash_and_salary
 
 # Import old working ViewSets
@@ -116,6 +118,16 @@ urlpatterns = [
     path('notifications/register-device/', views_notifications.register_device_token, name='register-device-token'),
     path('notifications/guest-checkin/', views_notifications.guest_checkin_notification, name='guest-checkin-notification'),
     path('notifications/guest-checkins/', views_notifications.get_guest_checkins, name='get-guest-checkins'),
+
+    # Guest catalogue (public list for the guest app + admin management)
+    path('catalogue/', views_catalogue.list_catalogue, name='catalogue-list'),
+    path('admin/catalogue/', views_catalogue.admin_catalogue, name='admin-catalogue'),
+    path('admin/catalogue/<uuid:item_id>/', views_catalogue.admin_catalogue_item, name='admin-catalogue-item'),
+
+    # Supervisor live location (working hours only; admins view latest position)
+    path('location/update/', views_location.update_location, name='location-update'),
+    path('location/status/', views_location.report_sharing_status, name='location-status'),
+    path('admin/supervisor-locations/', views_location.admin_supervisor_locations, name='admin-supervisor-locations'),
     path('notifications/mark-all-read/', views_notifications.mark_all_notifications_read, name='mark-all-notifications-read'),
     path('notifications/', views_notifications.get_notifications, name='get-notifications'),
     path('notifications/<uuid:notification_id>/read/', views_notifications.mark_notification_read, name='mark-late-notification-read'),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 import '../services/construction_service.dart';
@@ -2428,10 +2429,6 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
   Map<String, double> _rates = {};
   bool _isLoadingRates = true;
 
-  final _morningExtraCostController = TextEditingController();
-  final _morningExtraCostNotesController = TextEditingController();
-  final _eveningExtraCostController = TextEditingController();
-  final _eveningExtraCostNotesController = TextEditingController();
   bool _isSubmitting = false;
   late DateTime _morningSelectedDateTime;
   late DateTime _eveningSelectedDateTime;
@@ -2632,15 +2629,13 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
   @override
   void dispose() {
     _tabController.dispose();
-    _morningExtraCostController.dispose();
-    _morningExtraCostNotesController.dispose();
-    _eveningExtraCostController.dispose();
-    _eveningExtraCostNotesController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final onTime = TimeValidator.isLabourEntryOnTime();
+    final isMorningTab = _tabController.index == 0;
     return WillPopScope(
       onWillPop: () async {
         // STRICT LOCK: Block back navigation completely if any entries started
@@ -2673,162 +2668,170 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
       },
       child: Container(
         decoration: const BoxDecoration(
-          color: AppColors.cleanWhite,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+          color: Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: 24,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                const Text(
-                  '👷 Labour Count',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.deepNavy,
-                  ),
+            // Drag handle
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                const Spacer(),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+              ),
+            ),
+
+            // Title + date
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.deepNavy,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.groups_rounded, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Labour count',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.deepNavy,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('EEEE, d MMM').format(DateTime.now()),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Status + entry time
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _infoChip(
+                    icon: onTime ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                    label: onTime
+                        ? 'On time · before 12:00 PM'
+                        : 'Late entry · admin will be notified',
+                    color: onTime ? const Color(0xFF15803D) : const Color(0xFFC2410C),
+                  ),
+                  if (isMorningTab && !widget.morningAlreadySubmitted)
+                    _infoChip(
+                      icon: Icons.access_time_rounded,
+                      label: '${_formatTime(_morningSelectedDateTime)} · Change',
+                      color: AppColors.deepNavy,
+                      onTap: () => _selectTime(true),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Morning / Evening segmented control
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                height: 46,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE9ECF2),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  onTap: (index) {
+                    // Morning tab is blocked once morning entry is submitted
+                    if (index == 0 && widget.morningAlreadySubmitted) {
+                      _tabController.animateTo(1);
+                      return;
+                    }
+                    setState(() {});
+                  },
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(11),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
                       ),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.orangeGradient,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        'Workers: $_totalCount',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                    ],
+                  ),
+                  labelColor: AppColors.deepNavy,
+                  unselectedLabelColor: Colors.grey.shade600,
+                  labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  unselectedLabelStyle:
+                      const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  tabs: [
+                    Tab(
+                      child: Opacity(
+                        opacity: widget.morningAlreadySubmitted ? 0.45 : 1.0,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              widget.morningAlreadySubmitted
+                                  ? Icons.lock_rounded
+                                  : Icons.wb_sunny_rounded,
+                              size: 17,
+                            ),
+                            const SizedBox(width: 6),
+                            const Text('Morning'),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade700,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        '₹${_totalSalary.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                    const Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.nights_stay_rounded, size: 17),
+                          SizedBox(width: 6),
+                          Text('Evening'),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Time window info
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: TimeValidator.isLabourEntryOnTime()
-                    ? Colors.green.shade50
-                    : Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: TimeValidator.isLabourEntryOnTime()
-                      ? Colors.green.shade200
-                      : Colors.orange.shade300,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    TimeValidator.isLabourEntryOnTime()
-                        ? Icons.check_circle
-                        : Icons.warning,
-                    size: 16,
-                    color: TimeValidator.isLabourEntryOnTime()
-                        ? Colors.green.shade700
-                        : Colors.orange.shade700,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      TimeValidator.isLabourEntryOnTime()
-                          ? '${TimeValidator.getLabourTimeWindow()} • Current: ${TimeValidator.formatISTTime(TimeValidator.getISTTime())}'
-                          : '⚠️ Late Entry! ${TimeValidator.getLabourTimeWindow()}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: TimeValidator.isLabourEntryOnTime()
-                            ? Colors.green.shade700
-                            : Colors.orange.shade900,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
-            const SizedBox(height: 16),
-
-            // Tab Bar
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.lightSlate,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                onTap: (index) {
-                  // Morning tab is blocked once morning entry is submitted
-                  if (index == 0 && widget.morningAlreadySubmitted) {
-                    _tabController.animateTo(1);
-                    return;
-                  }
-                  setState(() {});
-                },
-                indicator: BoxDecoration(
-                  gradient: AppColors.orangeGradient,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                labelColor: Colors.white,
-                unselectedLabelColor: AppColors.textSecondary,
-                labelStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-                tabs: [
-                  Tab(
-                    child: Opacity(
-                      opacity: widget.morningAlreadySubmitted ? 0.4 : 1.0,
-                      child: const Text('🌅 Morning'),
-                    ),
-                  ),
-                  const Tab(text: '🌆 Evening'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
             // Tab Content
             Expanded(
@@ -2840,7 +2843,10 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
                     : null,
                 children: [
                   _buildTabContent(true), // Morning
-                  _buildTabContent(false), // Evening
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _buildTabContent(false), // Evening
+                  ),
                 ],
               ),
             ),
@@ -2849,6 +2855,46 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
       ),
     );
   }
+
+  Widget _infoChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: color.withValues(alpha: 0.09),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static final _rupees = NumberFormat.currency(
+    locale: 'en_IN',
+    symbol: '₹',
+    decimalDigits: 0,
+  );
 
   Widget _buildTabContent(bool isMorning) {
     // Show loading indicator while rates are being fetched
@@ -2902,126 +2948,143 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
     // Morning tab - editable form
     final labourCounts = _morningLabourCounts;
     final morningLocked = widget.morningAlreadySubmitted;
+    final types = labourCounts.keys.toList();
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Locked banner — shown when this supervisor already submitted morning
-          if (morningLocked)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade300),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.green.shade600, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Morning labour already submitted for today',
-                      style: TextStyle(
-                        color: Colors.green.shade800,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Locked banner — shown when this supervisor already submitted morning
+        if (morningLocked)
+          Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green.shade600, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Morning labour already submitted for today',
+                    style: TextStyle(
+                      color: Colors.green.shade800,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
                     ),
                   ),
-                ],
-              ),
-            ),
-
-          // Time Picker Section
-          _buildTimePicker(isMorning),
-          const SizedBox(height: 16),
-
-          SizedBox(
-            height: 300,
-            child: ListView(
-              children: labourCounts.keys
-                  .map((type) => _buildLabourTypeRow(type, isMorning))
-                  .toList(),
+                ),
+              ],
             ),
           ),
-          // Modern Submit Button with Gradient
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: _totalCount > 0
-                  ? [
-                      BoxShadow(
-                        color: AppColors.safetyOrange.withValues(alpha: 0.4),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ]
-                  : [],
+
+        Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+          child: Text(
+            'Tap + / − or tap a number to type it',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ),
+
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            itemCount: types.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) => _buildLabourTypeRow(types[i], isMorning),
+          ),
+        ),
+
+        _buildSubmitBar(isMorning),
+      ],
+    );
+  }
+
+  /// Sticky bottom bar: running totals + submit.
+  Widget _buildSubmitBar(bool isMorning) {
+    final enabled = _totalCount > 0 &&
+        !_isSubmitting &&
+        !(isMorning && widget.morningAlreadySubmitted);
+    final typesSelected = _currentLabourCounts.values.where((c) => c > 0).length;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        12,
+        20,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _totalCount == 1 ? '1 worker' : '$_totalCount workers',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.deepNavy,
+                  ),
+                ),
+                Text(
+                  _totalCount == 0
+                      ? 'Add workers to submit'
+                      : '${_rupees.format(_totalSalary)} · $typesSelected type${typesSelected == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: _totalCount == 0
+                        ? Colors.grey.shade500
+                        : const Color(0xFF15803D),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-            child: ElevatedButton(
-              onPressed: _totalCount > 0 && !_isSubmitting &&
-                      !(isMorning && widget.morningAlreadySubmitted)
-                  ? () => _submit(isMorning)
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                padding: EdgeInsets.zero,
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: enabled ? () => _submit(isMorning) : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.safetyOrange,
+                disabledBackgroundColor: Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(horizontal: 22),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: Ink(
-                decoration: BoxDecoration(
-                  gradient: _totalCount > 0
-                      ? LinearGradient(
-                          colors: [
-                            AppColors.safetyOrange,
-                            Colors.orange.shade600,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : LinearGradient(
-                          colors: [Colors.grey.shade300, Colors.grey.shade400],
-                        ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  alignment: Alignment.center,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 3,
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.check_circle,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              'Submit ${isMorning ? "Morning" : "Evening"} Labour Count',
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ],
-                        ),
+              icon: _isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : const Icon(Icons.check_rounded, color: Colors.white),
+              label: Text(
+                _isSubmitting ? 'Submitting…' : 'Submit',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
               ),
             ),
@@ -3616,242 +3679,211 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
     }
   }
 
+  static const _maxPerType = 50;
+
   Widget _buildLabourTypeRow(String type, bool isMorning) {
     final labourCounts = isMorning
         ? _morningLabourCounts
         : _eveningLabourCounts;
     final count = labourCounts[type]!;
-    final icon = _getLabourIcon(type);
+    final active = count > 0;
     final rate = _rates[type] ?? 0;
-    final rowTotal = count * rate;
+    final locked = isMorning && widget.morningAlreadySubmitted;
+
+    void setCount(int value) =>
+        setState(() => labourCounts[type] = value.clamp(0, _maxPerType));
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       decoration: BoxDecoration(
-        gradient: count > 0
-            ? LinearGradient(
-                colors: [
-                  AppColors.deepNavy.withValues(alpha: 0.08),
-                  AppColors.deepNavy.withValues(alpha: 0.03),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        color: count == 0 ? Colors.white : null,
+        color: active ? AppColors.deepNavy.withValues(alpha: 0.05) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: count > 0
-              ? AppColors.deepNavy.withValues(alpha: 0.25)
-              : Colors.grey.shade200,
-          width: count > 0 ? 2 : 1,
+          color: active
+              ? AppColors.deepNavy.withValues(alpha: 0.35)
+              : const Color(0xFFE5E7EB),
+          width: active ? 1.5 : 1,
         ),
-        boxShadow: count > 0
-            ? [
-                BoxShadow(
-                  color: AppColors.deepNavy.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
       ),
       child: Row(
         children: [
-          // Icon Container with gradient
           AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            width: 48,
-            height: 48,
+            duration: const Duration(milliseconds: 200),
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              gradient: count > 0
-                  ? LinearGradient(
-                      colors: [
-                        AppColors.deepNavy,
-                        AppColors.deepNavy.withValues(alpha: 0.8),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    )
-                  : LinearGradient(
-                      colors: [Colors.grey.shade400, Colors.grey.shade300],
-                    ),
+              color: active ? AppColors.deepNavy : const Color(0xFFF1F3F6),
               borderRadius: BorderRadius.circular(12),
-              boxShadow: count > 0
-                  ? [
-                      BoxShadow(
-                        color: AppColors.deepNavy.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ]
-                  : [],
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
+            child: Icon(
+              _getLabourIcon(type),
+              size: 21,
+              color: active ? Colors.white : Colors.grey.shade600,
+            ),
           ),
-          const SizedBox(width: 14),
-          // Labour Type Info
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   type,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: count > 0 ? FontWeight.bold : FontWeight.w600,
-                    color: count > 0
-                        ? AppColors.deepNavy
-                        : Colors.grey.shade700,
-                    letterSpacing: -0.3,
+                    fontSize: 15,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                    color: active ? AppColors.deepNavy : const Color(0xFF374151),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.currency_rupee,
-                      size: 13,
-                      color: count > 0
-                          ? Colors.green.shade700
-                          : Colors.grey.shade500,
-                    ),
-                    Text(
-                      count > 0
-                          ? '${rate.toStringAsFixed(0)}/day × $count = ₹${rowTotal.toStringAsFixed(0)}'
-                          : '${rate.toStringAsFixed(0)}/day',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: count > 0
-                            ? Colors.green.shade700
-                            : Colors.grey.shade500,
-                        fontWeight: count > 0
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 2),
+                Text(
+                  active
+                      ? '${_rupees.format(rate)} × $count = ${_rupees.format(rate * count)}'
+                      : '${_rupees.format(rate)} / day',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: active ? const Color(0xFF15803D) : Colors.grey.shade500,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  ),
                 ),
               ],
             ),
           ),
-          // Counter Controls
-          Row(
-            children: [
-              // Minus Button
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: count > 0
-                      ? () => setState(
-                          () => labourCounts[type] = (count - 1).clamp(0, 50),
-                        )
-                      : null,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    width: 40,
+          const SizedBox(width: 8),
+          // Stepper: − [count] +   (tap the count to type it)
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F3F6),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _stepperButton(
+                  icon: Icons.remove_rounded,
+                  onTap: !locked && count > 0 ? () => setCount(count - 1) : null,
+                ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: locked ? null : () => _typeCount(type, count, setCount),
+                  child: SizedBox(
+                    width: 38,
                     height: 40,
-                    decoration: BoxDecoration(
-                      color: count > 0
-                          ? Colors.red.shade50
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: count > 0
-                            ? Colors.red.shade200
-                            : Colors.grey.shade300,
-                        width: 1.5,
+                    child: Center(
+                      child: Text(
+                        '$count',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: active ? AppColors.deepNavy : Colors.grey.shade500,
+                        ),
                       ),
                     ),
-                    child: Icon(
-                      Icons.remove,
-                      size: 22,
-                      color: count > 0
-                          ? Colors.red.shade600
-                          : Colors.grey.shade400,
-                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              // Count Display
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 50,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: count > 0
-                      ? AppColors.orangeGradient
-                      : LinearGradient(
-                          colors: [Colors.grey.shade200, Colors.grey.shade100],
-                        ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: count > 0
-                      ? [
-                          BoxShadow(
-                            color: AppColors.safetyOrange.withValues(
-                              alpha: 0.3,
-                            ),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : [],
+                _stepperButton(
+                  icon: Icons.add_rounded,
+                  filled: true,
+                  onTap: !locked && count < _maxPerType ? () => setCount(count + 1) : null,
                 ),
-                child: Center(
-                  child: Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: count > 0 ? Colors.white : Colors.grey.shade600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              // Plus Button
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => setState(
-                    () => labourCounts[type] = (count + 1).clamp(0, 50),
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.green.shade400, Colors.green.shade600],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green.withValues(alpha: 0.3),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.add, size: 22, color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _stepperButton({
+    required IconData icon,
+    required VoidCallback? onTap,
+    bool filled = false,
+  }) {
+    final enabled = onTap != null;
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: Material(
+        color: filled && enabled ? AppColors.deepNavy : Colors.white,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Icon(
+              icon,
+              size: 20,
+              color: !enabled
+                  ? Colors.grey.shade400
+                  : filled
+                      ? Colors.white
+                      : AppColors.deepNavy,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Type a count directly instead of tapping + many times.
+  Future<void> _typeCount(
+    String type,
+    int current,
+    void Function(int) setCount,
+  ) async {
+    final controller = TextEditingController(text: current > 0 ? '$current' : '');
+    final formKey = GlobalKey<FormState>();
+    final value = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(type),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              labelText: 'Number of workers',
+              helperText: '0 – $_maxPerType',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            validator: (v) {
+              final n = int.tryParse((v ?? '').trim()) ?? 0;
+              return n > _maxPerType ? 'Maximum is $_maxPerType' : null;
+            },
+            onFieldSubmitted: (_) {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, int.tryParse(controller.text.trim()) ?? 0);
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, int.tryParse(controller.text.trim()) ?? 0);
+              }
+            },
+            child: const Text('Set'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null) setCount(value);
   }
 
   IconData _getLabourIcon(String type) {
@@ -3887,12 +3919,6 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
     final labourCounts = isMorning
         ? _morningLabourCounts
         : _eveningLabourCounts;
-    final extraCostController = isMorning
-        ? _morningExtraCostController
-        : _eveningExtraCostController;
-    final extraCostNotesController = isMorning
-        ? _morningExtraCostNotesController
-        : _eveningExtraCostNotesController;
     final selectedDateTime = isMorning
         ? _morningSelectedDateTime
         : _eveningSelectedDateTime;
@@ -3918,215 +3944,84 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
 
     setState(() => _isSubmitting = true);
 
-    print('🕒 [LABOUR] About to submit with selected time: $selectedDateTime');
-    print('🕒 [LABOUR] Current IST time: ${TimeValidator.getISTTime()}');
-    print('🕒 [LABOUR] Is on time: $isOnTime');
-
-    // Submit each labour type with count > 0
-    final errors = <String>[];
-    int successCount = 0;
-
-    for (final entry in labourCounts.entries) {
-      if (entry.value > 0) {
-        final result = await _constructionService.submitLabourCount(
-          siteId: widget.siteId,
-          labourCount: entry.value,
-          labourType: entry.key,
-          customDateTime: selectedDateTime,
-        );
-        if (result['success'] == true) {
-          successCount++;
-        } else {
-          errors.add('${entry.key}: ${result['error'] ?? 'Failed'}');
-        }
-      }
-    }
-
-    // Send notification to admin if entry is late
-    if (!isOnTime && successCount > 0) {
-      final notificationService = NotificationService();
-      await notificationService.sendLateEntryNotification(
-        siteId: widget.siteId,
-        entryType: 'labour',
-        message: TimeValidator.getLabourLateMessage(),
-        actualTime: TimeValidator.getISTTime(),
-      );
-    }
-
-    setState(() => _isSubmitting = false);
-
-    if (mounted) {
-      if (errors.isEmpty) {
-        Navigator.pop(context);
-        widget.onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isOnTime
-                  ? '$successCount labour types submitted successfully!'
-                  : '⚠️ $successCount labour types submitted (Late entry - Admin notified)',
-            ),
-            backgroundColor: isOnTime
-                ? AppColors.statusCompleted
-                : Colors.orange,
-            duration: Duration(seconds: isOnTime ? 2 : 4),
-          ),
-        );
-      } else if (successCount > 0) {
-        Navigator.pop(context);
-        widget.onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '$successCount submitted. Errors: ${errors.join(', ')}',
-            ),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed: ${errors.first}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-        setState(() => _isSubmitting = false);
-      }
-    }
-  }
-
-  Widget _buildTimePicker(bool isMorning) {
-    final selectedDateTime = isMorning
-        ? _morningSelectedDateTime
-        : _eveningSelectedDateTime;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.deepNavy.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.deepNavy.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.access_time, size: 20, color: AppColors.deepNavy),
-              const SizedBox(width: 8),
-              const Text(
-                'Entry Time',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.deepNavy,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              // Date — read-only (today's date, not selectable)
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.lightSlate,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.deepNavy.withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_today,
-                        size: 18,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _formatDateTime(selectedDateTime),
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Time — tappable
-              Expanded(
-                child: InkWell(
-                  onTap: () => _selectTime(isMorning),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.deepNavy.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.schedule,
-                          size: 18,
-                          color: AppColors.deepNavy,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatTime(selectedDateTime),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.deepNavy,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Today: ${_formatDateTime(selectedDateTime)} • Tap time to change',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
+    // Submit all labour types at once (each is its own entry, and the backend's
+    // unique lock guards duplicates), instead of waiting for them one by one.
+    final toSubmit = labourCounts.entries.where((e) => e.value > 0).toList();
+    final results = await Future.wait(
+      toSubmit.map(
+        (entry) => _constructionService
+            .submitLabourCount(
+              siteId: widget.siteId,
+              labourCount: entry.value,
+              labourType: entry.key,
+              customDateTime: selectedDateTime,
+            )
+            .catchError((Object e) => <String, dynamic>{'success': false, 'error': '$e'}),
       ),
     );
-  }
 
-  String _formatDateTime(DateTime dateTime) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[dateTime.month - 1]} ${dateTime.day}, ${dateTime.year}';
+    final errors = <String>[];
+    int successCount = 0;
+    for (var i = 0; i < toSubmit.length; i++) {
+      if (results[i]['success'] == true) {
+        successCount++;
+      } else {
+        errors.add('${toSubmit[i].key}: ${results[i]['error'] ?? 'Failed'}');
+      }
+    }
+
+    // Tell admin about a late entry — in the background, don't make the
+    // supervisor wait for it.
+    if (!isOnTime && successCount > 0) {
+      NotificationService()
+          .sendLateEntryNotification(
+            siteId: widget.siteId,
+            entryType: 'labour',
+            message: TimeValidator.getLabourLateMessage(),
+            actualTime: TimeValidator.getISTTime(),
+          )
+          .catchError((Object e) {
+        debugPrint('Late entry notification failed: $e');
+        return <String, dynamic>{};
+      });
+    }
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (errors.isEmpty) {
+      Navigator.pop(context);
+      widget.onSuccess();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isOnTime
+                ? '$successCount labour types submitted successfully!'
+                : '⚠️ $successCount labour types submitted (Late entry - Admin notified)',
+          ),
+          backgroundColor: isOnTime ? AppColors.statusCompleted : Colors.orange,
+          duration: Duration(seconds: isOnTime ? 2 : 4),
+        ),
+      );
+    } else if (successCount > 0) {
+      Navigator.pop(context);
+      widget.onSuccess();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount submitted. Errors: ${errors.join(', ')}'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed: ${errors.first}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   String _formatTime(DateTime dateTime) {
@@ -4238,21 +4133,40 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
         );
         setState(() {
           _availableMaterials = materials;
-          // Initialize quantities map with available materials
+          // "Stocks left" starts at the current stock, so a material the
+          // supervisor doesn't touch is recorded as 0 used (not as all used).
           _materialQuantities = {
             for (var material in materials)
-              material['material_type'] as String: 0.0,
+              material['material_type'] as String:
+                  (material['current_balance'] as num?)?.toDouble() ?? 0.0,
           };
         });
       }
     } catch (e) {
       print('Error loading materials: $e');
     } finally {
-      setState(() => _isLoadingMaterials = false);
+      if (mounted) setState(() => _isLoadingMaterials = false);
     }
   }
 
-  int get _totalItems => _materialQuantities.values.where((q) => q > 0).length;
+  Map<String, dynamic> _materialData(String type) => _availableMaterials
+      .firstWhere((m) => m['material_type'] == type, orElse: () => {});
+
+  double _balanceOf(String type) =>
+      (_materialData(type)['current_balance'] as num?)?.toDouble() ?? 0.0;
+
+  String _unitOf(String type) =>
+      _materialData(type)['unit'] as String? ?? 'units';
+
+  double _usedOf(String type) =>
+      (_balanceOf(type) - (_materialQuantities[type] ?? 0)).clamp(0.0, double.infinity);
+
+  /// Materials the supervisor recorded usage for
+  int get _totalItems =>
+      _materialQuantities.keys.where((type) => _usedOf(type) > 0).length;
+
+  static String _qty(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
 
   @override
   void dispose() {
@@ -4262,10 +4176,11 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
 
   @override
   Widget build(BuildContext context) {
+    final onTime = TimeValidator.isMaterialEntryOnTime();
     return WillPopScope(
       onWillPop: () async {
         // STRICT LOCK: Block back navigation completely if any entries started
-        final hasEntries = _materialQuantities.values.any((qty) => qty > 0);
+        final hasEntries = _totalItems > 0;
 
         if (hasEntries) {
           // Show warning message - DO NOT allow back
@@ -4292,126 +4207,159 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
       },
       child: Container(
         decoration: const BoxDecoration(
-          color: AppColors.cleanWhite,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+          color: Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: 24,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                const Text(
-                  '📦 Material Balance',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.deepNavy,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.greenGradient,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '$_totalItems items',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Time window info
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: TimeValidator.isMaterialEntryOnTime()
-                    ? Colors.green.shade50
-                    : Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: TimeValidator.isMaterialEntryOnTime()
-                      ? Colors.green.shade200
-                      : Colors.orange.shade300,
+            // Drag handle
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
+            ),
+
+            // Title + date
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
               child: Row(
                 children: [
-                  Icon(
-                    TimeValidator.isMaterialEntryOnTime()
-                        ? Icons.check_circle
-                        : Icons.warning,
-                    size: 16,
-                    color: TimeValidator.isMaterialEntryOnTime()
-                        ? Colors.green.shade700
-                        : Colors.orange.shade700,
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.statusCompleted,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.inventory_2_rounded, color: Colors.white),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      TimeValidator.isMaterialEntryOnTime()
-                          ? '${TimeValidator.getMaterialTimeWindow()} • Current: ${TimeValidator.formatISTTime(TimeValidator.getISTTime())}'
-                          : '⚠️ Outside Time Window! ${TimeValidator.getMaterialTimeWindow()}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: TimeValidator.isMaterialEntryOnTime()
-                            ? Colors.green.shade700
-                            : Colors.orange.shade900,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Material balance',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.deepNavy,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        Text(
+                          DateFormat('EEEE, d MMM').format(DateTime.now()),
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // Tab Bar
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.lightSlate,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                onTap: (_) => setState(() {}),
-                indicator: BoxDecoration(
-                  gradient: AppColors.greenGradient,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                labelColor: Colors.white,
-                unselectedLabelColor: AppColors.textSecondary,
-                labelStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-                tabs: const [
-                  Tab(text: '📝 Update'),
-                  Tab(text: '📊 Available'),
+            // Status + entry date/time
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _materialChip(
+                    icon: onTime ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                    label: onTime
+                        ? 'On time · ${TimeValidator.getMaterialTimeWindow()}'
+                        : 'Outside time window · admin will be notified',
+                    color: onTime ? const Color(0xFF15803D) : const Color(0xFFC2410C),
+                  ),
+                  if (_tabController.index == 0) ...[
+                    _materialChip(
+                      icon: Icons.calendar_today_rounded,
+                      label: _formatDate(_selectedDateTime),
+                      color: AppColors.deepNavy,
+                      onTap: _selectDate,
+                    ),
+                    _materialChip(
+                      icon: Icons.access_time_rounded,
+                      label: '${_formatTime(_selectedDateTime)} · Change',
+                      color: AppColors.deepNavy,
+                      onTap: _selectTime,
+                    ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
+
+            // Update / Stock segmented control
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                height: 46,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE9ECF2),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  onTap: (_) => setState(() {}),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(11),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  labelColor: AppColors.deepNavy,
+                  unselectedLabelColor: Colors.grey.shade600,
+                  labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  unselectedLabelStyle:
+                      const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  tabs: const [
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.edit_note_rounded, size: 18),
+                          SizedBox(width: 6),
+                          Text('Update'),
+                        ],
+                      ),
+                    ),
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.inventory_rounded, size: 17),
+                          SizedBox(width: 6),
+                          Text('Stock'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
 
             // Tab Content
             Expanded(
@@ -4426,190 +4374,200 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
     );
   }
 
-  // Update Tab - Current functionality for material usage
+  Widget _materialChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: color.withValues(alpha: 0.09),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyMaterials() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 56, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            const Text(
+              'No materials available',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.deepNavy,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'The site engineer needs to add materials to the inventory first.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Update Tab - record what's left at the end of the day
   Widget _buildUpdateTab() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    if (_isLoadingMaterials) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_materialQuantities.isEmpty) return _emptyMaterials();
+    final types = _materialQuantities.keys.toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+          child: Text(
+            'Enter how much is left now · tap a number to type it',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            itemCount: types.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) => _buildMaterialTypeRow(types[i]),
+          ),
+        ),
+        _buildMaterialSubmitBar(),
+      ],
+    );
+  }
+
+  Widget _buildMaterialSubmitBar() {
+    final used = _totalItems;
+    final unchanged = _materialQuantities.length - used;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 12 + MediaQuery.of(context).padding.bottom),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Row(
         children: [
-          _buildTimePicker(),
-          const SizedBox(height: 16),
-          if (_isLoadingMaterials)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(40),
-                child: CircularProgressIndicator(color: AppColors.primary),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  used == 0
+                      ? 'Nothing used yet'
+                      : '$used material${used == 1 ? '' : 's'} used',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.deepNavy,
+                  ),
+                ),
+                Text(
+                  '$unchanged unchanged',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: !_isSubmitting && !_isLoadingMaterials ? _submit : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.statusCompleted,
+                disabledBackgroundColor: Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
-            )
-          else if (_materialQuantities.isEmpty)
-            Container(
-              height: 200,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppColors.lightSlate,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.borderColor),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.inventory_2_outlined,
-                      size: 60,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No materials available',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Site Engineer needs to add materials first',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+              icon: _isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                    )
+                  : const Icon(Icons.check_rounded, color: Colors.white),
+              label: Text(
+                _isSubmitting ? 'Submitting…' : 'Submit',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
               ),
-            )
-          else
-            Column(
-              children: _materialQuantities.keys
-                  .map((type) => _buildMaterialTypeRow(type))
-                  .toList(),
             ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _totalItems > 0 && !_isSubmitting ? _submit : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.statusCompleted,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: _isSubmitting
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : const Text(
-                    'Submit Material Balance',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
           ),
         ],
       ),
     );
   }
 
-  // Available Tab - Shows current balance of materials
+  // Stock Tab - current balance of each material
   Widget _buildAvailableTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _isLoadingMaterials
-            ? Center(
-                child: Padding(
-                  padding: EdgeInsets.all(40),
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                ),
-              )
-            : _availableMaterials.isEmpty
-            ? Container(
-                height: 400,
-                padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.lightSlate,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.borderColor),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.inventory_2_outlined,
-                        size: 80,
-                        color: AppColors.textSecondary,
-                      ),
-                      SizedBox(height: 16),
-                      Text(
-                        'No materials available',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Site Engineer needs to add materials to inventory first',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            : Expanded(
-                child: ListView.builder(
-                  itemCount: _availableMaterials.length,
-                  itemBuilder: (context, index) {
-                    final material = _availableMaterials[index];
-                    return _buildAvailableMaterialCard(material);
-                  },
-                ),
-              ),
-      ],
+    if (_isLoadingMaterials) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_availableMaterials.isEmpty) return _emptyMaterials();
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      itemCount: _availableMaterials.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => _buildAvailableMaterialCard(_availableMaterials[i]),
     );
   }
 
   Widget _buildAvailableMaterialCard(Map<String, dynamic> material) {
     final materialType = material['material_type'] as String;
-    final currentBalance =
-        (material['current_balance'] as num?)?.toDouble() ?? 0.0;
+    final currentBalance = (material['current_balance'] as num?)?.toDouble() ?? 0.0;
     final totalUsed = (material['total_used'] as num?)?.toDouble() ?? 0.0;
     final unit = material['unit'] as String? ?? 'units';
-    final icon = _getMaterialIcon(materialType);
+    final total = currentBalance + totalUsed;
+    final usedShare = total > 0 ? totalUsed / total : 0.0;
+    final low = total > 0 && currentBalance / total < 0.2;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.statusCompleted.withValues(alpha: 0.1),
-            AppColors.statusCompleted.withValues(alpha: 0.05),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.statusCompleted.withValues(alpha: 0.3),
-          width: 2,
-        ),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4617,128 +4575,78 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
           Row(
             children: [
               Container(
-                width: 50,
-                height: 50,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
-                  gradient: AppColors.greenGradient,
+                  color: AppColors.statusCompleted.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: Colors.white, size: 26),
+                child: Icon(
+                  _getMaterialIcon(materialType),
+                  size: 21,
+                  color: AppColors.statusCompleted,
+                ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      materialType,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.deepNavy,
-                      ),
+                child: Text(
+                  materialType,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.deepNavy,
+                  ),
+                ),
+              ),
+              if (low)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'Low stock',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFB91C1C),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Unit: $unit',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: usedShare,
+              minHeight: 8,
+              backgroundColor: AppColors.statusCompleted.withValues(alpha: 0.15),
+              valueColor: const AlwaysStoppedAnimation(AppColors.safetyOrange),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'In stock ${_qty(currentBalance)} $unit',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.statusCompleted,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Used ${_qty(totalUsed)} $unit',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.safetyOrange,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.statusCompleted.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.inventory,
-                        color: AppColors.statusCompleted,
-                        size: 28,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Available',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${currentBalance.toInt()}',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.statusCompleted,
-                        ),
-                      ),
-                      Text(
-                        unit,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(width: 1, height: 80, color: AppColors.borderColor),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.trending_down,
-                        color: AppColors.safetyOrange,
-                        size: 28,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Total Used',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${totalUsed.toInt()}',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.safetyOrange,
-                        ),
-                      ),
-                      Text(
-                        unit,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -4746,319 +4654,220 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
   }
 
   Widget _buildMaterialTypeRow(String type) {
-    final quantity = _materialQuantities[type]!;
+    final left = _materialQuantities[type]!;
+    final balance = _balanceOf(type);
+    final unit = _unitOf(type);
+    final used = _usedOf(type);
+    final active = used > 0;
 
-    // Find the material data from available materials
-    final materialData = _availableMaterials.firstWhere(
-      (m) => m['material_type'] == type,
-      orElse: () => {},
-    );
-
-    final availableBalance =
-        (materialData['current_balance'] as num?)?.toDouble() ?? 0.0;
-    final unit = materialData['unit'] as String? ?? 'units';
-    final icon = _getMaterialIcon(type);
+    void setLeft(double value) =>
+        setState(() => _materialQuantities[type] = value.clamp(0.0, balance));
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       decoration: BoxDecoration(
-        gradient: quantity > 0
-            ? LinearGradient(
-                colors: [
-                  Colors.green.shade50,
-                  Colors.green.shade100.withValues(alpha: 0.3),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        color: quantity == 0 ? Colors.white : null,
-        borderRadius: BorderRadius.circular(18),
+        color: active ? AppColors.safetyOrange.withValues(alpha: 0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: quantity > 0 ? Colors.green.shade300 : Colors.grey.shade200,
-          width: quantity > 0 ? 2 : 1,
+          color: active
+              ? AppColors.safetyOrange.withValues(alpha: 0.45)
+              : const Color(0xFFE5E7EB),
+          width: active ? 1.5 : 1,
         ),
-        boxShadow: quantity > 0
-            ? [
-                BoxShadow(
-                  color: Colors.green.withValues(alpha: 0.15),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: active ? AppColors.safetyOrange : const Color(0xFFF1F3F6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              _getMaterialIcon(type),
+              size: 21,
+              color: active ? Colors.white : Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  type,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                    color: active ? AppColors.deepNavy : const Color(0xFF374151),
+                  ),
                 ),
-              ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+                const SizedBox(height: 2),
+                Text(
+                  active
+                      ? 'Used today: ${_qty(used)} $unit'
+                      : 'In stock ${_qty(balance)} $unit',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: active ? const Color(0xFFC2410C) : Colors.grey.shade500,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  ),
                 ),
               ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Stepper for "stocks left": − [left] +   (tap the number to type)
+          Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Icon with gradient
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 50,
-                height: 50,
+              Container(
                 decoration: BoxDecoration(
-                  gradient: quantity > 0
-                      ? LinearGradient(
-                          colors: [
-                            Colors.green.shade600,
-                            Colors.green.shade400,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : LinearGradient(
-                          colors: [Colors.grey.shade400, Colors.grey.shade300],
-                        ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: quantity > 0
-                      ? [
-                          BoxShadow(
-                            color: Colors.green.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                      : [],
+                  color: const Color(0xFFF1F3F6),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                child: Icon(icon, color: Colors.white, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      type,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: quantity > 0
-                            ? FontWeight.bold
-                            : FontWeight.w600,
-                        color: quantity > 0
-                            ? AppColors.deepNavy
-                            : Colors.grey.shade700,
-                        letterSpacing: -0.3,
+                    _materialStepperButton(
+                      icon: Icons.remove_rounded,
+                      onTap: left > 0 ? () => setLeft(left - 1) : null,
+                    ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => _typeStockLeft(type, left, balance, unit, setLeft),
+                      child: SizedBox(
+                        width: 46,
+                        height: 40,
+                        child: Center(
+                          child: FittedBox(
+                            child: Text(
+                              _qty(left),
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: active ? AppColors.deepNavy : Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.green.shade300),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.inventory_2,
-                                size: 12,
-                                color: Colors.green.shade700,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${availableBalance.toInt()} $unit',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.green.shade700,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (quantity > 0) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.orange.shade400,
-                                  Colors.orange.shade600,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.orange.withValues(alpha: 0.3),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.arrow_downward,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Left: ${quantity.toInt()} $unit',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+                    _materialStepperButton(
+                      icon: Icons.add_rounded,
+                      filled: true,
+                      onTap: left < balance ? () => setLeft(left + 1) : null,
                     ),
                   ],
                 ),
               ),
-              // Reset button
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: quantity > 0
-                      ? () => setState(() => _materialQuantities[type] = 0)
-                      : null,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: quantity > 0
-                          ? Colors.orange.shade50
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: quantity > 0
-                            ? Colors.orange.shade300
-                            : Colors.grey.shade300,
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.refresh,
-                      size: 22,
-                      color: quantity > 0
-                          ? Colors.orange.shade600
-                          : Colors.grey.shade400,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // Number input with +/- buttons - Stocks Left
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+              const SizedBox(height: 2),
               Text(
-                'Stocks Left',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  // Minus button
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        final newValue = (quantity - 1).clamp(0.0, double.infinity);
-                        _materialQuantities[type] = newValue;
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.all(8),
-                      backgroundColor: Colors.grey.shade300,
-                      foregroundColor: Colors.grey.shade700,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Icon(Icons.remove, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  // Number display with text input
-                  Expanded(
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                        hintText: '0',
-                      ),
-                      controller: TextEditingController(text: quantity.toInt().toString())
-                        ..selection = TextSelection.fromPosition(
-                          TextPosition(offset: quantity.toInt().toString().length),
-                        ),
-                      onChanged: (value) {
-                        final numValue = double.tryParse(value) ?? 0;
-                        setState(() => _materialQuantities[type] = numValue.clamp(0.0, availableBalance));
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Plus button
-                  ElevatedButton(
-                    onPressed: quantity < availableBalance
-                        ? () {
-                            setState(() {
-                              _materialQuantities[type] = (quantity + 1).clamp(0.0, availableBalance);
-                            });
-                          }
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.all(8),
-                      backgroundColor: quantity < availableBalance ? Colors.green.shade600 : Colors.grey.shade300,
-                      foregroundColor: quantity < availableBalance ? Colors.white : Colors.grey.shade500,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Icon(Icons.add, size: 20),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Max available: ${availableBalance.toInt()} $unit',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontWeight: FontWeight.w500,
-                ),
+                'left',
+                style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500),
               ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _materialStepperButton({
+    required IconData icon,
+    required VoidCallback? onTap,
+    bool filled = false,
+  }) {
+    final enabled = onTap != null;
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: Material(
+        color: filled && enabled ? AppColors.statusCompleted : Colors.white,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 34,
+            height: 34,
+            child: Icon(
+              icon,
+              size: 19,
+              color: !enabled
+                  ? Colors.grey.shade400
+                  : filled
+                      ? Colors.white
+                      : AppColors.deepNavy,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Type the stock left directly (decimals allowed, e.g. 2.5 tons).
+  Future<void> _typeStockLeft(
+    String type,
+    double current,
+    double balance,
+    String unit,
+    void Function(double) setLeft,
+  ) async {
+    final controller = TextEditingController(text: _qty(current));
+    final formKey = GlobalKey<FormState>();
+    double? parse(String? v) => double.tryParse((v ?? '').trim());
+    final value = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(type),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+            decoration: InputDecoration(
+              labelText: 'Stock left ($unit)',
+              helperText: 'In stock: ${_qty(balance)} $unit',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            validator: (v) {
+              final n = parse(v);
+              if (n == null) return 'Enter a number';
+              if (n > balance) return 'Can\'t be more than ${_qty(balance)} in stock';
+              return null;
+            },
+            onFieldSubmitted: (v) {
+              if (formKey.currentState!.validate()) Navigator.pop(context, parse(v));
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, parse(controller.text));
+              }
+            },
+            child: const Text('Set'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value != null) setLeft(value);
   }
 
   IconData _getMaterialIcon(String type) {
@@ -5092,53 +4901,26 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
     final isOnTime = TimeValidator.isMaterialEntryOnTime();
     final currentIST = TimeValidator.getISTTime();
 
-    print(
-      '🕒 [MATERIAL] Current IST time: $currentIST (${TimeValidator.formatISTTime(currentIST)})',
-    );
-    print('🕒 [MATERIAL] Is on time: $isOnTime');
-    print('🕒 [MATERIAL] Time window: 4:00 PM - 7:00 PM IST');
+    // Convert "stocks left" into quantity used for every material
+    // (untouched materials report 0 used)
+    final materials = <Map<String, dynamic>>[
+      for (final type in _materialQuantities.keys)
+        if (_materialData(type).isNotEmpty)
+          {
+            'material_type': type,
+            'quantity': _usedOf(type),
+            'unit': _unitOf(type),
+          },
+    ];
 
-    // Prepare materials list with correct units from available materials
-    // Convert stocks left to quantity used
-    final materials = <Map<String, dynamic>>[];
-
-    print('📦 [MATERIAL] Available materials: $_availableMaterials');
-    print('📦 [MATERIAL] Material quantities (slider values): $_materialQuantities');
-
-    for (final entry in _materialQuantities.entries) {
-      print('🔍 [MATERIAL] Processing: ${entry.key} = ${entry.value}');
-
-      if (entry.value < 0) {
-        print('⏭️ [MATERIAL] Skipping ${entry.key} - negative value');
-        continue;
-      }
-
-      // Find the material data to get the correct unit and current balance
-      final materialData = _availableMaterials.firstWhere(
-        (m) => m['material_type'] == entry.key,
-        orElse: () => {},
+    if (materials.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No materials to submit'),
+          backgroundColor: Colors.orange,
+        ),
       );
-
-      if (materialData.isEmpty) {
-        print('⏭️ [MATERIAL] Skipping ${entry.key} - material data not found');
-        continue;
-      }
-
-      final currentBalance = (materialData['current_balance'] as num?)?.toDouble() ?? 0.0;
-      final stocksLeft = entry.value;
-      final quantityUsed = (currentBalance - stocksLeft).clamp(0.0, double.infinity);
-
-      print(
-        '📊 [MATERIAL] ${entry.key}: balance=$currentBalance, left=$stocksLeft, used=$quantityUsed',
-      );
-
-      // Include materials with zero or positive usage
-      materials.add({
-        'material_type': entry.key,
-        'quantity': quantityUsed,
-        'unit': materialData['unit'] as String? ?? 'units',
-      });
-      print('✅ [MATERIAL] Added ${entry.key} with usage $quantityUsed');
+      return;
     }
 
     // Show confirmation dialog first
@@ -5156,198 +4938,56 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
 
     setState(() => _isSubmitting = true);
 
-    print(
-      '🕒 [MATERIAL] About to submit with selected time: $_selectedDateTime',
-    );
-    print('📦 [MATERIAL] Materials to submit: $materials');
-
-    if (materials.isEmpty) {
-      setState(() => _isSubmitting = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No materials with usage to submit'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-      return;
-    }
-
     final result = await _constructionService.submitMaterialBalance(
       siteId: widget.siteId,
       materials: materials,
       customDateTime: _selectedDateTime, // Pass the selected local time
     );
+    final success = result['success'] == true;
 
-    print('🕒 [MATERIAL] Submission result: ${result['success']}');
-    print(
-      '🕒 [MATERIAL] Should send notification: ${!isOnTime && result['success']}',
-    );
-
-    // Send notification to admin if entry is late
-    if (!isOnTime && result['success']) {
-      print('📧 [MATERIAL] Sending late entry notification to admin...');
-      final notificationService = NotificationService();
-      final notificationResult = await notificationService
+    // Tell admin about a late entry — in the background, don't make the
+    // supervisor wait for it.
+    if (!isOnTime && success) {
+      NotificationService()
           .sendLateEntryNotification(
             siteId: widget.siteId,
             entryType: 'material',
             message: TimeValidator.getMaterialLateMessage(),
             actualTime: currentIST,
-          );
-      print(
-        '📧 [MATERIAL] Notification result: ${notificationResult['success']}',
-      );
-      if (!notificationResult['success']) {
-        print(
-          '❌ [MATERIAL] Notification error: ${notificationResult['error']}',
-        );
-      }
+          )
+          .catchError((Object e) {
+        debugPrint('Late entry notification failed: $e');
+        return <String, dynamic>{};
+      });
     }
 
+    if (!mounted) return;
     setState(() => _isSubmitting = false);
 
-    if (mounted) {
-      // Reload available materials to show updated total_used
-      if (result['success']) {
-        await _loadAvailableMaterials();
-        widget.onMaterialUpdated?.call();
-      }
-
-      Navigator.pop(context);
-      widget.onSuccess();
+    if (!success) {
+      // Keep the sheet open so nothing the supervisor entered is lost
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            result['success']
-                ? (isOnTime
-                      ? '✅ Materials updated!'
-                      : '⚠️ Materials updated (Late entry - Admin notified)')
-                : '❌ ${result['error']}',
-          ),
-          backgroundColor: result['success']
-              ? (isOnTime ? AppColors.statusCompleted : Colors.orange)
-              : AppColors.statusOverdue,
-          duration: Duration(seconds: result['success'] && !isOnTime ? 4 : 2),
+          content: Text('❌ ${result['error'] ?? 'Could not submit. Please try again.'}'),
+          backgroundColor: AppColors.statusOverdue,
+          duration: const Duration(seconds: 5),
         ),
       );
+      return;
     }
-  }
 
-  Widget _buildTimePicker() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.statusCompleted.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.statusCompleted.withValues(alpha: 0.2),
+    widget.onMaterialUpdated?.call();
+    Navigator.pop(context);
+    widget.onSuccess();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isOnTime
+              ? '✅ Materials updated!'
+              : '⚠️ Materials updated (Late entry - Admin notified)',
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.access_time,
-                size: 20,
-                color: AppColors.statusCompleted,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Entry Time',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.statusCompleted,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: _selectDate,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.statusCompleted.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.calendar_today,
-                          size: 18,
-                          color: AppColors.statusCompleted,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatDate(_selectedDateTime),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.statusCompleted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InkWell(
-                  onTap: _selectTime,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.statusCompleted.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.schedule,
-                          size: 18,
-                          color: AppColors.statusCompleted,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatTime(_selectedDateTime),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.statusCompleted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Selected: ${_formatDate(_selectedDateTime)} at ${_formatTime(_selectedDateTime)} • Tap to change',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
+        backgroundColor: isOnTime ? AppColors.statusCompleted : Colors.orange,
+        duration: Duration(seconds: isOnTime ? 2 : 4),
       ),
     );
   }

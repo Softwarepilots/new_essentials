@@ -8,9 +8,11 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 from datetime import datetime, time
 from .authentication import JWTAuthentication
-from .database import execute_query, fetch_one, fetch_all
+from .database import execute_query, fetch_one, fetch_all, get_db_connection
+import psycopg
 import uuid
 import pytz
 
@@ -258,7 +260,7 @@ def submit_labour_count(request):
     Lock rule        = one entry per (site, date, entry_type, labour_type)
     """
     from .time_utils import get_day_of_week
-    from django.db import transaction, IntegrityError
+    # (raw psycopg connection below; Django transaction/IntegrityError not used)
 
     IST = pytz.timezone('Asia/Kolkata')
 
@@ -345,7 +347,13 @@ def submit_labour_count(request):
         logger.warning(f"[LABOUR] Duplicate check: site={site_id}, date={entry_date}, "
                       f"type={entry_type}, labour={labour_type}, role={user_role}")
 
-        existing = fetch_one("""
+        # One connection + one real transaction for the whole entry. (Each
+        # fetch_one/execute_query call opened its own Supabase connection,
+        # ~1.5 s each, and execute_query swallowed insert errors.)
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
             SELECT le.id,
                    le.supervisor_id,
                    le.entry_time,
@@ -360,6 +368,8 @@ def submit_labour_count(request):
               AND  le.submitted_by_role = %s
             LIMIT 1
         """, (site_id, entry_date, entry_type, labour_type, user_role))
+        row = cur.fetchone()
+        existing = (dict(zip([d[0] for d in cur.description], row)) if row else None)
 
         print(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
         logger.warning(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
@@ -374,6 +384,7 @@ def submit_labour_count(request):
                           f"roles_match={user_role == existing['submitted_by_role']}")
 
         if existing:
+            conn.close()
             if str(existing['supervisor_id']) == str(user_id):
                 return Response({
                     'error': (f'You already submitted {labour_type} for the '
@@ -398,46 +409,46 @@ def submit_labour_count(request):
         entry_id = str(uuid.uuid4())
 
         try:
-            with transaction.atomic():
-                execute_query("""
-                    INSERT INTO labour_entries
-                        (id, site_id, supervisor_id, labour_count, labour_type,
-                         entry_date, entry_time, entry_type, day_of_week,
-                         notes, extra_cost, extra_cost_notes, submitted_by_role)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (entry_id, site_id, user_id, labour_count, labour_type,
-                      entry_date, entry_time, entry_type, day_of_week,
-                      notes, extra_cost, extra_cost_notes, user_role))
+            cur.execute("""
+                INSERT INTO labour_entries
+                    (id, site_id, supervisor_id, labour_count, labour_type,
+                     entry_date, entry_time, entry_type, day_of_week,
+                     notes, extra_cost, extra_cost_notes, submitted_by_role)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (entry_id, site_id, user_id, labour_count, labour_type,
+                  entry_date, entry_time, entry_type, day_of_week,
+                  notes, extra_cost, extra_cost_notes, user_role))
 
-                # Resolve daily rate (admin-configured > built-in default)
-                rate_row = fetch_one("""
-                    SELECT daily_rate FROM labour_salary_rates
-                    WHERE  site_id IS NULL
-                      AND  labour_type = %s
-                      AND  is_active = TRUE
-                    ORDER BY effective_from DESC
-                    LIMIT 1
-                """, (labour_type,))
-                daily_rate = (float(rate_row['daily_rate'])
-                              if rate_row and rate_row.get('daily_rate')
-                              else _DEFAULT_RATES.get(labour_type, 900))
-                total_cost = daily_rate * labour_count
+            # Resolve daily rate (admin-configured > built-in default)
+            cur.execute("""
+                SELECT daily_rate FROM labour_salary_rates
+                WHERE  site_id IS NULL
+                  AND  labour_type = %s
+                  AND  is_active = TRUE
+                ORDER BY effective_from DESC
+                LIMIT 1
+            """, (labour_type,))
+            rate_row = cur.fetchone()
+            daily_rate = (float(rate_row[0]) if rate_row and rate_row[0]
+                          else _DEFAULT_RATES.get(labour_type, 900))
+            total_cost = daily_rate * labour_count
 
-                execute_query("""
-                    INSERT INTO labour_cost_calculation
-                        (id, site_id, labour_entry_id, labour_type, labour_count,
-                         daily_rate, total_cost, entry_date, day_of_week)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (labour_entry_id) DO UPDATE
-                        SET daily_rate = EXCLUDED.daily_rate,
-                            total_cost = EXCLUDED.total_cost
-                """, (str(uuid.uuid4()), site_id, entry_id, labour_type,
-                      labour_count, daily_rate, total_cost, entry_date, day_of_week))
+            cur.execute("""
+                INSERT INTO labour_cost_calculation
+                    (id, site_id, labour_entry_id, labour_type, labour_count,
+                     daily_rate, total_cost, entry_date, day_of_week)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (labour_entry_id) DO UPDATE
+                    SET daily_rate = EXCLUDED.daily_rate,
+                        total_cost = EXCLUDED.total_cost
+            """, (str(uuid.uuid4()), site_id, entry_id, labour_type,
+                  labour_count, daily_rate, total_cost, entry_date, day_of_week))
 
-                print(f"[LABOUR] ✅ Inserted entry_id={entry_id} "
-                      f"entry_date={entry_date} entry_type={entry_type}")
+            conn.commit()  # entry + cost saved together, or neither
+            print(f"[LABOUR] ✅ Inserted entry_id={entry_id} "
+                  f"entry_date={entry_date} entry_type={entry_type}")
 
-                return Response({
+            return Response({
                     'success': True,
                     'message': 'Labour count submitted successfully',
                     'entry_id': entry_id,
@@ -452,7 +463,8 @@ def submit_labour_count(request):
                     'extra_cost': extra_cost,
                 }, status=status.HTTP_201_CREATED)
 
-        except IntegrityError as e:
+        except psycopg.IntegrityError as e:
+            conn.rollback()
             print(f"[LABOUR] ❌ IntegrityError: {e}")
             if 'idx_labour_entry_lock' in str(e) or 'unique' in str(e).lower():
                 return Response({
@@ -460,6 +472,11 @@ def submit_labour_count(request):
                     'retry': True,
                 }, status=status.HTTP_409_CONFLICT)
             raise
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"[LABOUR] ❌ Unhandled error: {e}")
@@ -670,40 +687,53 @@ def submit_material_balance(request):
             entry_time = entry_meta['timestamp_ist']
             day_of_week = entry_meta['day_of_week']
         
-        # DAILY RESTRICTION: Check if already submitted today for this site (any supervisor)
-        existing_entry = fetch_one("""
-            SELECT id FROM material_usage
-            WHERE site_id = %s AND usage_date = %s
-            LIMIT 1
-        """, (site_id, entry_date))
-        
-        if existing_entry:
-            return Response({
-                'error': f'Material balance already submitted for {entry_date} for this site. It can only be submitted once per day per site.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Insert material usage records with custom or current time
+        # Build all rows first, then save them on ONE connection in ONE
+        # transaction. (Each execute_query opened its own Supabase connection,
+        # ~1.5 s per material, and swallowed errors — a partial save reported
+        # success and the once-per-day rule then blocked a corrected retry.)
+        rows = []
         for material in materials:
-            material_id = str(uuid.uuid4())
-            
             # Ensure UTF-8 encoding for material type and notes
             material_type = str(material['material_type'])
             unit = str(material.get('unit', 'units'))
             notes = str(extra_cost_notes) if extra_cost_notes else None
-            
+
             # Clean any special characters that might cause encoding issues
             material_type = material_type.encode('utf-8', errors='ignore').decode('utf-8')
             unit = unit.encode('utf-8', errors='ignore').decode('utf-8')
             if notes:
                 notes = notes.encode('utf-8', errors='ignore').decode('utf-8')
-            
-            execute_query("""
-                INSERT INTO material_usage 
+
+            rows.append((str(uuid.uuid4()), site_id, user_id, material_type,
+                         material['quantity'], unit, entry_date, notes, entry_time))
+
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            # DAILY RESTRICTION: Check if already submitted today for this site (any supervisor)
+            cur.execute("""
+                SELECT id FROM material_usage
+                WHERE site_id = %s AND usage_date = %s
+                LIMIT 1
+            """, (site_id, entry_date))
+            if cur.fetchone():
+                return Response({
+                    'error': f'Material balance already submitted for {entry_date} for this site. It can only be submitted once per day per site.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Insert material usage records with custom or current time
+            cur.executemany("""
+                INSERT INTO material_usage
                 (id, site_id, supervisor_id, material_type, quantity_used, unit, usage_date, notes, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (material_id, site_id, user_id, material_type, material['quantity'], 
-                  unit, entry_date, notes, entry_time))
-        
+            """, rows)
+            conn.commit()  # all materials saved, or none
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
         return Response({
             'message': 'Material balance submitted successfully',
             'day_of_week': day_of_week,

@@ -187,11 +187,16 @@ def login(request):
         )
         
         # Generate JWT token
+        role_name = user.get('role_name')
+        if not role_name:
+            print(f"[LOGIN] ⚠️ WARNING: User {username} has no role assigned. role_id={user.get('role_id')}")
+            role_name = 'Supervisor'  # Default to Supervisor if no role found
+
         access_token = generate_access_token({
             'user_id': str(user['id']),
             'username': user['username'],
             'email': user['email'],
-            'role': user['role_name']
+            'role': role_name
         })
         
         return Response({

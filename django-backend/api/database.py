@@ -174,10 +174,15 @@ def execute_query(query, params=None):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params or ())
+                rowcount = cur.rowcount
+                print(f"[DB QUERY] Executed query, affected rows: {rowcount}")
                 conn.commit()
-                return True
+                print(f"[DB QUERY] Transaction committed successfully")
+                return rowcount > 0 if rowcount >= 0 else True
     except Exception as e:
         print(f"[DB ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def fetch_one(query, params=None):
@@ -200,16 +205,22 @@ def fetch_one(query, params=None):
 def fetch_all(query, params=None):
     """Fetch all rows from database"""
     try:
+        print(f"[DB FETCH] Executing query with params: {params}", flush=True)
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params or ())
                 rows = cur.fetchall()
+                print(f"[DB FETCH] Fetched {len(rows) if rows else 0} rows", flush=True)
                 if rows:
                     # Get column names
                     columns = [desc[0] for desc in cur.description]
-                    # Return as list of dictionaries
-                    return [dict(zip(columns, row)) for row in rows]
+                    result = [dict(zip(columns, row)) for row in rows]
+                    print(f"[DB FETCH] Returning {len(result)} rows as dicts", flush=True)
+                    return result
+                print(f"[DB FETCH] No rows found, returning empty list", flush=True)
                 return []
     except Exception as e:
-        print(f"[DB ERROR] {str(e)}")
+        print(f"[DB ERROR] {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
         return []

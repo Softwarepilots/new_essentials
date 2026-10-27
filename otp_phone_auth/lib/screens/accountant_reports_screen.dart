@@ -17,7 +17,7 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
   DateTime? _selectedDate; // null = All dates (no filter)
   String? _selectedRole; // null = All
   String? _selectedSiteId; // null = All sites
-  String? _selectedEntryType; // null = All, 'labour', 'material'
+  String? _selectedEntryType; // null = All, 'labour', 'material', 'extra_cost'
 
   static const _roles = ['Supervisor', 'Site Engineer'];
 
@@ -80,10 +80,15 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
       builder: (context, provider, child) {
         final labourEntries = _filterEntries(provider.accountantLabourEntries);
         final materialEntries = _filterEntries(provider.accountantMaterialEntries);
+        final extraCosts = _filterEntries(provider.accountantExtraCosts);
         final isLoading = provider.isLoadingAccountantData;
         final totalSalary = labourEntries.fold<double>(
           0,
           (sum, e) => sum + ((e['total_cost'] as double?) ?? 0),
+        );
+        final totalExtraCosts = extraCosts.fold<double>(
+          0,
+          (sum, e) => sum + ((e['amount'] as double?) ?? 0),
         );
 
         return Scaffold(
@@ -407,10 +412,13 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         // "All" chip
-                        Expanded(
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width - 48) / 2,
                           child: _EntryTypeChip(
                             label: 'All',
                             icon: Icons.list_alt,
@@ -418,26 +426,37 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
                             onTap: () => setState(() => _selectedEntryType = null),
                           ),
                         ),
-                        const SizedBox(width: 8),
                         // "Labour" chip
-                        Expanded(
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width - 48) / 2,
                           child: _EntryTypeChip(
                             label: 'Labour',
                             icon: Icons.people,
                             selected: _selectedEntryType == 'labour',
-                            onTap: () => setState(() => 
+                            onTap: () => setState(() =>
                                 _selectedEntryType = _selectedEntryType == 'labour' ? null : 'labour'),
                           ),
                         ),
-                        const SizedBox(width: 8),
                         // "Material" chip
-                        Expanded(
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width - 48) / 2,
                           child: _EntryTypeChip(
                             label: 'Material',
                             icon: Icons.inventory_2,
                             selected: _selectedEntryType == 'material',
-                            onTap: () => setState(() => 
+                            onTap: () => setState(() =>
                                 _selectedEntryType = _selectedEntryType == 'material' ? null : 'material'),
+                          ),
+                        ),
+                        // "Extra Cost" chip
+                        SizedBox(
+                          width: (MediaQuery.of(context).size.width - 48) / 2,
+                          child: _EntryTypeChip(
+                            label: 'Extra Cost',
+                            icon: Icons.attach_money,
+                            selected: _selectedEntryType == 'extra_cost',
+                            onTap: () => setState(() =>
+                                _selectedEntryType = _selectedEntryType == 'extra_cost' ? null : 'extra_cost'),
                           ),
                         ),
                       ],
@@ -458,7 +477,7 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
                           await provider.loadAccountantData(forceRefresh: true);
                         },
                         color: AppColors.deepNavy,
-                        child: _buildList(labourEntries, materialEntries),
+                        child: _buildList(labourEntries, materialEntries, extraCosts),
                       ),
               ),
             ],
@@ -469,12 +488,21 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
   }
 
   Widget _buildList(
-      List<Map<String, dynamic>> labour, List<Map<String, dynamic>> material) {
+      List<Map<String, dynamic>> labour,
+      List<Map<String, dynamic>> material,
+      List<Map<String, dynamic>> extraCosts) {
     // Apply entry type filter
-    final filteredLabour = _selectedEntryType == 'material' ? <Map<String, dynamic>>[] : labour;
-    final filteredMaterial = _selectedEntryType == 'labour' ? <Map<String, dynamic>>[] : material;
-    
-    if (filteredLabour.isEmpty && filteredMaterial.isEmpty) {
+    final filteredLabour = _selectedEntryType == 'material' || _selectedEntryType == 'extra_cost'
+        ? <Map<String, dynamic>>[]
+        : labour;
+    final filteredMaterial = _selectedEntryType == 'labour' || _selectedEntryType == 'extra_cost'
+        ? <Map<String, dynamic>>[]
+        : material;
+    final filteredExtraCosts = _selectedEntryType == 'labour' || _selectedEntryType == 'material'
+        ? <Map<String, dynamic>>[]
+        : extraCosts;
+
+    if (filteredLabour.isEmpty && filteredMaterial.isEmpty && filteredExtraCosts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -698,6 +726,62 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
               const SizedBox(height: 4),
             ],
 
+            // ── Divider ──────────────────────────────────────
+            if ((labourGroups.isNotEmpty || materialGroups.isNotEmpty) && filteredExtraCosts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Divider(color: Colors.white, thickness: 1.5),
+              ),
+
+            // ── Extra Costs section ──────────────────────────
+            if (filteredExtraCosts.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.attach_money,
+                          color: Colors.orange, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Extra Costs',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.deepNavy,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${filteredExtraCosts.length} item${filteredExtraCosts.length != 1 ? 's' : ''}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ...filteredExtraCosts.map((cost) => _buildExtraCostRow(
+                  cost['description'] as String? ?? 'Unknown',
+                  cost['amount'] as double? ?? 0,
+                  cost['submitted_by_role'] as String? ?? '')),
+              const SizedBox(height: 4),
+            ],
+
             const SizedBox(height: 12),
           ],
         ),
@@ -774,6 +858,53 @@ class _AccountantReportsScreenState extends State<AccountantReportsScreen> {
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
                 color: AppColors.deepNavy,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExtraCostRow(String description, double amount, String role) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  description,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.deepNavy,
+                      fontWeight: FontWeight.w500),
+                ),
+                if (role.isNotEmpty)
+                  Text(
+                    'by $role',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '₹${amount.toStringAsFixed(0)}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.orange,
               ),
             ),
           ),

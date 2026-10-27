@@ -88,7 +88,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   @override
   void initState() {
     super.initState();
-    _notifTabController = TabController(length: 3, vsync: this)
+    _notifTabController = TabController(length: 4, vsync: this)
       ..addListener(_markGuestsSeenIfVisible);
     _navSubscription = NotificationNavigationService().stream.listen((dest) {
       if (!mounted) return;
@@ -216,7 +216,7 @@ class _AdminDashboardState extends State<AdminDashboard>
 
   /// Clears the guest badge once the admin is looking at the Guests list.
   Future<void> _markGuestsSeenIfVisible() async {
-    if (_selectedIndex != 2 || _notifTabController?.index != 2) return;
+    if (_selectedIndex != 2 || _notifTabController?.index != 3) return; // Alerts → Guests
     if (_newGuestCount == 0) return;
     final now = DateTime.now();
     setState(() => _guestsLastSeen = now);
@@ -1091,17 +1091,23 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   Widget _buildNotificationsTab() {
-    // Split notifications: Labour vs Photos+Material
-    final labourNotifications = _notifications.where((n) => 
+    // Split notifications: Labour vs Photos+Material vs Site Requirements
+    final labourNotifications = _notifications.where((n) =>
       n['entry_type'] == 'labour'
     ).toList();
-    
-    final photosAndMaterialNotifications = _notifications.where((n) => 
-      n['entry_type'] == 'morning_photo' || 
+
+    final photosAndMaterialNotifications = _notifications.where((n) =>
+      n['entry_type'] == 'morning_photo' ||
       n['entry_type'] == 'evening_photo' ||
       n['entry_type'] == 'material'
     ).toList();
-    
+
+    final siteRequirementNotifications = _notifications.where((n) =>
+      n['entry_type'] == 'Site Requirement'
+    ).toList();
+
+    // Tabs are driven by _notifTabController (not a DefaultTabController) so
+    // push-notification taps and the guest badge can select a tab.
     return Column(
         children: [
           // Header with actions
@@ -1200,6 +1206,15 @@ class _AdminDashboardState extends State<AdminDashboard>
                 Tab(
                   child: Row(
                     children: [
+                      const Icon(Icons.assignment, size: 18),
+                      const SizedBox(width: 6),
+                      Text('Requirements (${siteRequirementNotifications.length})'),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    children: [
                       const Icon(Icons.person_add_alt_1, size: 18),
                       const SizedBox(width: 6),
                       Text('Guests (${_guestVisitors.length})'),
@@ -1226,6 +1241,12 @@ class _AdminDashboardState extends State<AdminDashboard>
                             color: Color(0xFF1A1A2E)))
                     : _buildNotificationsList(
                         photosAndMaterialNotifications, 'photos_material'),
+                _notificationsLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                            color: Color(0xFF1A1A2E)))
+                    : _buildNotificationsList(
+                        siteRequirementNotifications, 'site_requirement'),
                 _buildGuestVisitorsList(),
               ],
             ),
@@ -1493,8 +1514,8 @@ class _AdminDashboardState extends State<AdminDashboard>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          type == 'labour' ? Colors.blue : Colors.orange,
-                          type == 'labour' ? Colors.blue.shade700 : Colors.orange.shade700,
+                          type == 'labour' ? Colors.blue : type == 'site_requirement' ? Colors.purple : Colors.orange,
+                          type == 'labour' ? Colors.blue.shade700 : type == 'site_requirement' ? Colors.purple.shade700 : Colors.orange.shade700,
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -1502,14 +1523,14 @@ class _AdminDashboardState extends State<AdminDashboard>
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      type == 'labour' ? Icons.people : Icons.photo_camera,
+                      type == 'labour' ? Icons.people : type == 'site_requirement' ? Icons.assignment : Icons.photo_camera,
                       size: 50,
                       color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    type == 'labour' ? 'No Labour Notifications' : 'No Photo or Material Notifications',
+                    type == 'labour' ? 'No Labour Notifications' : type == 'site_requirement' ? 'No Site Requirement Notifications' : 'No Photo or Material Notifications',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -1518,8 +1539,10 @@ class _AdminDashboardState extends State<AdminDashboard>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    type == 'labour' 
+                    type == 'labour'
                         ? 'Labour entry notifications\nwill appear here'
+                        : type == 'site_requirement'
+                        ? 'Site requirement notifications\nwill appear here'
                         : 'Photo and material balance\nnotifications will appear here',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
@@ -1587,6 +1610,11 @@ class _AdminDashboardState extends State<AdminDashboard>
         entryTypeDisplay = 'Evening Photo';
         entryIcon = Icons.nights_stay;
         entryColor = Colors.indigo;
+        break;
+      case 'Site Requirement':
+        entryTypeDisplay = 'Site Requirement';
+        entryIcon = Icons.assignment;
+        entryColor = Colors.purple;
         break;
       default:
         entryTypeDisplay = 'Late Entry';

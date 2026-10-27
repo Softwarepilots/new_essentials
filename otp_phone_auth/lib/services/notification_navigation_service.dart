@@ -3,7 +3,7 @@ import 'dart:async';
 /// Holds the destination when a push notification is tapped.
 class NotificationNavDestination {
   final int mainTab;    // admin dashboard bottom-nav index
-  final int subTab;     // notifications tab-bar index (0=labour,1=photos,2=guests)
+  final int subTab;     // notifications tab-bar index (0=labour,1=photos,2=requirements,3=guests)
 
   const NotificationNavDestination({required this.mainTab, required this.subTab});
 }
@@ -24,7 +24,7 @@ class NotificationNavigationService {
     const mainTab = 2;
 
     final subTab = switch (type) {
-      'guest_checkin' => 2,            // Guests sub-tab
+      'guest_checkin' => 3,            // Guests sub-tab
       'labour'        => 0,            // Labour sub-tab
       _               => 1,            // Photos/Material sub-tab
     };

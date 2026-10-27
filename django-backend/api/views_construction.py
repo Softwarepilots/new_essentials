@@ -7,11 +7,23 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from datetime import datetime, time
 from .authentication import JWTAuthentication
 from .database import execute_query, fetch_one, fetch_all
 import uuid
 import pytz
+
+
+# TEST ENDPOINT - NO AUTHENTICATION to isolate the issue
+@api_view(['POST'])
+def test_material_balance(request):
+    """Test endpoint without authentication"""
+    print(f'✅ [TEST] Test endpoint called!')
+    site_id = request.data.get('site_id')
+    materials = request.data.get('materials', [])
+    print(f'✅ [TEST] site_id: {site_id}, materials count: {len(materials)}')
+    return Response({'message': 'Test endpoint works!', 'received_site_id': site_id, 'received_materials': materials}, status=status.HTTP_200_OK)
 
 
 # ============================================
@@ -258,8 +270,20 @@ def submit_labour_count(request):
     }
 
     try:
+        import logging
+        logger = logging.getLogger('django')
+
         user_id   = request.user['user_id']
-        user_role = request.user.get('role', 'Supervisor')
+        user_role = request.user.get('role')
+
+        if not user_role:
+            logger.error(f"[LABOUR AUTH CRITICAL] user_id={user_id} has no role in JWT token!")
+            return Response({
+                'error': 'User role not found in authentication token. Please log out and log in again.',
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        print(f"[LABOUR AUTH] user_id={user_id}, jwt_role={user_role}")
+        logger.warning(f"[LABOUR AUTH] user_id={user_id}, jwt_role={user_role}")
 
         site_id     = request.data.get('site_id', '').strip()
         labour_type = request.data.get('labour_type', 'General').strip()
@@ -310,24 +334,44 @@ def submit_labour_count(request):
         entry_type   = 'morning' if entry_hour < 12 else 'evening'
         day_of_week  = get_day_of_week(ist_dt)
 
-        print(f"[LABOUR] site={site_id} date={entry_date} type={entry_type} "
-              f"labour_type={labour_type} count={labour_count} role={user_role}")
+        logger.warning(f"[LABOUR] site={site_id} date={entry_date} type={entry_type} "
+                      f"labour_type={labour_type} count={labour_count} role={user_role}")
 
         # ── Duplicate / lock check ────────────────────────────────────────
-        # One entry per (site, date, entry_type, labour_type) across all supervisors.
+        # One entry per (site, date, entry_type, labour_type, submitted_by_role) per user.
+        # This allows supervisor and site engineer to submit same labour type separately.
+        print(f"[LABOUR] Duplicate check: site={site_id}, date={entry_date}, "
+              f"type={entry_type}, labour={labour_type}, role={user_role}")
+        logger.warning(f"[LABOUR] Duplicate check: site={site_id}, date={entry_date}, "
+                      f"type={entry_type}, labour={labour_type}, role={user_role}")
+
         existing = fetch_one("""
             SELECT le.id,
                    le.supervisor_id,
                    le.entry_time,
+                   le.submitted_by_role,
                    COALESCE(u.full_name, u.phone) AS supervisor_name
             FROM   labour_entries le
             LEFT JOIN users u ON u.id = le.supervisor_id
-            WHERE  le.site_id    = %s
-              AND  le.entry_date = %s
-              AND  le.entry_type = %s
-              AND  le.labour_type = %s
+            WHERE  le.site_id         = %s
+              AND  le.entry_date      = %s
+              AND  le.entry_type      = %s
+              AND  le.labour_type     = %s
+              AND  le.submitted_by_role = %s
             LIMIT 1
-        """, (site_id, entry_date, entry_type, labour_type))
+        """, (site_id, entry_date, entry_type, labour_type, user_role))
+
+        print(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
+        logger.warning(f"[LABOUR] Result: {'FOUND' if existing else 'NOT FOUND'}")
+        if existing:
+            print(f"[LABOUR] Existing: id={existing['id']}, role={existing['submitted_by_role']}, "
+                  f"supervisor={existing['supervisor_id']}")
+            logger.warning(f"[LABOUR] Existing: id={existing['id']}, role={existing['submitted_by_role']}, "
+                          f"supervisor={existing['supervisor_id']}")
+            print(f"[LABOUR] Role Match Debug: seeking_role={user_role}, found_role={existing['submitted_by_role']}, "
+                  f"roles_match={user_role == existing['submitted_by_role']}")
+            logger.warning(f"[LABOUR] Role Match Debug: seeking_role={user_role}, found_role={existing['submitted_by_role']}, "
+                          f"roles_match={user_role == existing['submitted_by_role']}")
 
         if existing:
             if str(existing['supervisor_id']) == str(user_id):
@@ -343,7 +387,7 @@ def submit_labour_count(request):
                              if existing.get('entry_time') else 'earlier')
                 return Response({
                     'error': (f'{labour_type} ({entry_type}) already entered by '
-                              f'{existing["supervisor_name"]} at {locked_at}'),
+                              f'{existing["supervisor_name"]} ({existing["submitted_by_role"]}) at {locked_at}'),
                     'locked_by': existing['supervisor_name'],
                     'locked_at': locked_at,
                     'entry_type': entry_type,
@@ -455,45 +499,59 @@ def check_entry_lock(request):
         current_hour = datetime.now().hour
         entry_type = 'morning' if current_hour < 12 else 'evening'
         
-        print(f"[ENTRY_LOCK_CHECK] Checking lock for site={site_id}, date={entry_date}, type={entry_type}, user={user_id}")
-        
-        # Check if any entries exist for this site/date
+        user_role = request.user.get('role')
+        print(f"[ENTRY_LOCK_CHECK] Checking lock for site={site_id}, date={entry_date}, type={entry_type}, user={user_id}, role={user_role}")
+
+        if not user_role:
+            return Response({'error': 'User role not found in token'},
+                          status=status.HTTP_401_UNAUTHORIZED)
+
+        # Check if any entries exist for this site/date from DIFFERENT ROLES
+        # We only care about locks from other roles, not other users in the same role
         entries = fetch_all("""
-            SELECT 
+            SELECT
                 le.id,
                 le.supervisor_id,
                 COALESCE(u.full_name, u.phone) as supervisor_name,
                 le.entry_time,
                 le.labour_type,
                 le.labour_count,
-                le.entry_type
+                le.entry_type,
+                le.submitted_by_role
             FROM labour_entries le
-            LEFT JOIN users u ON le.supervisor_id = u.user_id
-            WHERE le.site_id = %s 
+            LEFT JOIN users u ON le.supervisor_id = u.id
+            WHERE le.site_id = %s
               AND le.entry_date = %s
             ORDER BY le.entry_time DESC
         """, (site_id, entry_date))
         
         if not entries:
             # No entries - site is available
+            print(f"[ENTRY_LOCK_CHECK] No entries found - site available")
             return Response({
                 'is_locked': False,
                 'can_enter': True,
                 'entries': []
             }, status=status.HTTP_200_OK)
-        
-        # Check if current user has any entries
-        user_entries = [e for e in entries if str(e['supervisor_id']) == str(user_id)]
-        other_entries = [e for e in entries if str(e['supervisor_id']) != str(user_id)]
-        
-        if other_entries:
-            # Another supervisor has entered data
-            first_other = other_entries[0]
-            entry_time_str = first_other['entry_time'].strftime("%I:%M %p") if first_other.get('entry_time') else 'earlier'
-            
+
+        # Check for entries from SAME ROLE vs DIFFERENT ROLES
+        # Lock if SAME role already submitted (only one role per site/date)
+        # Allow if only DIFFERENT role submitted
+        role_entries = [e for e in entries if e.get('submitted_by_role') == user_role]
+        different_role_entries = [e for e in entries if e.get('submitted_by_role') and e.get('submitted_by_role') != user_role]
+
+        print(f"[ENTRY_LOCK_CHECK] Found {len(entries)} entries: {len(role_entries)} from same role={user_role}, {len(different_role_entries)} from different roles")
+        for e in entries:
+            print(f"  - Entry: labour_type={e['labour_type']}, submitted_by_role={e.get('submitted_by_role')}, supervisor_id={e['supervisor_id']}")
+
+        # If same role has already entered data - LOCK (prevent another user of same role)
+        if role_entries:
+            first_entry = role_entries[0]
+            entry_time_str = first_entry['entry_time'].strftime("%I:%M %p") if first_entry.get('entry_time') else 'earlier'
+            print(f"[ENTRY_LOCK_CHECK] LOCKED - Same role {user_role} already has entries")
             return Response({
                 'is_locked': True,
-                'locked_by': first_other['supervisor_name'],
+                'locked_by': first_entry.get('supervisor_name', 'Another ' + user_role),
                 'locked_at': entry_time_str,
                 'can_enter': False,
                 'can_view': True,
@@ -501,25 +559,36 @@ def check_entry_lock(request):
                     {
                         'labour_type': e['labour_type'],
                         'labour_count': e['labour_count'],
-                        'entry_type': e.get('entry_type', 'unknown')
+                        'entry_type': e.get('entry_type', 'unknown'),
+                        'submitted_by_role': e.get('submitted_by_role')
                     }
-                    for e in other_entries
+                    for e in role_entries
                 ]
             }, status=status.HTTP_200_OK)
-        
-        # Only current user has entries - they can continue
+
+        # Different role entries exist but same role hasn't - allow this role to submit
+        if different_role_entries:
+            print(f"[ENTRY_LOCK_CHECK] ALLOWED - Different role has entries, but {user_role} can submit separately")
+            return Response({
+                'is_locked': False,
+                'can_enter': True,
+                'entries': [
+                    {
+                        'labour_type': e['labour_type'],
+                        'labour_count': e['labour_count'],
+                        'entry_type': e.get('entry_type', 'unknown'),
+                        'submitted_by_role': e.get('submitted_by_role')
+                    }
+                    for e in different_role_entries
+                ]
+            }, status=status.HTTP_200_OK)
+
+        # No entries at all - allow
+        print(f"[ENTRY_LOCK_CHECK] ALLOWED - No entries found")
         return Response({
             'is_locked': False,
             'can_enter': True,
-            'has_existing_entries': True,
-            'entries': [
-                {
-                    'labour_type': e['labour_type'],
-                    'labour_count': e['labour_count'],
-                    'entry_type': e.get('entry_type', 'unknown')
-                }
-                for e in user_entries
-            ]
+            'entries': []
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -527,6 +596,7 @@ def check_entry_lock(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@csrf_exempt
 @api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
@@ -535,29 +605,36 @@ def submit_material_balance(request):
     Supervisor: Submit material balance with custom local time
     Accepts custom_datetime from client to use local device time
     """
+    print(f'🔵 [MATERIAL] View called successfully')
+
     try:
         # Import time utilities
         from .time_utils import is_within_entry_hours, get_entry_metadata, get_entry_time_status, get_day_of_week
         from datetime import datetime
         import pytz
         import sys
-        
+
         # Ensure stdout uses UTF-8 encoding
         if sys.stdout.encoding != 'utf-8':
             sys.stdout.reconfigure(encoding='utf-8')
-        
-        user_id = request.user['user_id']
+
+        user_id = request.user.user_data.get('user_id')
         site_id = request.data.get('site_id')
         materials = request.data.get('materials', [])  # List of {material_type, quantity, unit}
         extra_cost = request.data.get('extra_cost', 0)
         extra_cost_notes = request.data.get('extra_cost_notes', '')
-        
+
         # Get custom date/time from client (local device time)
         custom_datetime_str = request.data.get('custom_datetime')
-        
+
+        print(f'📦 [MATERIAL] site_id: {site_id}')
+        print(f'📦 [MATERIAL] materials: {materials}')
+        print(f'📦 [MATERIAL] materials type: {type(materials)}')
+        print(f'📦 [MATERIAL] materials is empty: {not materials}')
+
         if not site_id or not materials:
-            return Response({'error': 'site_id and materials are required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
+            print(f'❌ [MATERIAL] Validation failed - site_id: {bool(site_id)}, materials: {bool(materials)}')
+            return Response({'error': 'site_id and materials are required'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Use custom date/time if provided, otherwise use current IST time
         if custom_datetime_str:
@@ -639,8 +716,10 @@ def submit_material_balance(request):
         
     except Exception as e:
         # Ensure error message is safe to encode
+        import traceback
         error_msg = str(e).encode('utf-8', errors='replace').decode('utf-8')
-        print(f"Error in submit_material_balance: {error_msg}")
+        print(f"❌ [MATERIAL] Error in submit_material_balance: {error_msg}")
+        print(f"❌ [MATERIAL] Traceback: {traceback.format_exc()}")
         return Response({'error': error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1663,6 +1742,30 @@ def get_all_entries_for_accountant(request):
         """
         material_entries = fetch_all(material_query)
 
+        # Get extra costs for all sites
+        extra_costs_query = """
+            SELECT
+                e.id,
+                e.site_id,
+                e.description,
+                e.amount,
+                e.uploaded_at as entry_date,
+                u.full_name as submitted_by_name,
+                u.username as submitted_by_username,
+                r.role_name as submitted_by_role,
+                s.site_name,
+                s.customer_name,
+                s.area,
+                s.street
+            FROM extra_works e
+            JOIN users u ON e.uploaded_by = u.id
+            JOIN roles r ON u.role_id = r.id
+            JOIN sites s ON e.site_id = s.id
+            ORDER BY e.uploaded_at DESC
+            LIMIT 200
+        """
+        extra_costs = fetch_all(extra_costs_query)
+
         # Sum labour_count from cash_entries table (total workers approved)
         approved_count_result = fetch_one("""
             SELECT COALESCE(SUM(labour_count), 0) as count
@@ -1671,7 +1774,7 @@ def get_all_entries_for_accountant(request):
         approved_entries_count = approved_count_result['count'] if approved_count_result else 0
 
         # Debug logging BEFORE creating response
-        print(f"📊 [ACCOUNTANT API] Returning {len(labour_entries)} labour entries, {len(material_entries)} material entries")
+        print(f"📊 [ACCOUNTANT API] Returning {len(labour_entries)} labour entries, {len(material_entries)} material entries, {len(extra_costs)} extra costs")
         print(f"📊 [ACCOUNTANT API] Total labour count from cash_entries: {approved_entries_count}")
         total_salary = sum(float(e.get('total_cost', 0) or 0) for e in labour_entries)
         print(f"💰 [ACCOUNTANT API] Total salary: ₹{total_salary}")
@@ -1722,8 +1825,25 @@ def get_all_entries_for_accountant(request):
                 }
                 for e in material_entries
             ],
+            'extra_costs': [
+                {
+                    'id': str(e['id']),
+                    'site_id': str(e['site_id']),
+                    'description': e['description'],
+                    'amount': float(e['amount']) if e.get('amount') else 0,
+                    'entry_date': e['entry_date'].isoformat() if e.get('entry_date') else None,
+                    'submitted_by_name': e.get('submitted_by_name', ''),
+                    'submitted_by_role': e.get('submitted_by_role', ''),
+                    'site_name': e['site_name'],
+                    'customer_name': e['customer_name'],
+                    'area': e['area'],
+                    'street': e['street'],
+                }
+                for e in extra_costs
+            ],
             'total_labour_entries': approved_entries_count,  # Count of distinct approved entries
             'total_material_entries': len(material_entries),
+            'total_extra_costs': len(extra_costs),
             'message': 'Showing approved entries from ALL supervisors and sites for accountant'
         }
         
@@ -2145,11 +2265,10 @@ def get_entries_by_date(request):
                           status=status.HTTP_400_BAD_REQUEST)
         
         # Build WHERE clause based on user role
-        # All roles see all entries for the site/date
-        # The Flutter app handles the lockedByOther detection client-side
-        user_filter = ""
-        labour_params = (site_id, entry_date)
-        print(f"🔍 [ENTRIES_BY_DATE] Loading all entries for site (role: {user_role})")
+        # Only show entries submitted by the current user
+        user_filter = " AND l.supervisor_id = %s"
+        labour_params = (site_id, entry_date, user_id)
+        print(f"🔍 [ENTRIES_BY_DATE] Loading entries for site, user={user_id} (role: {user_role})")
         
         # Get labour entries for this site and date
         labour_query = f"""
@@ -2182,9 +2301,9 @@ def get_entries_by_date(request):
         labour_entries = fetch_all(labour_query, labour_params)
         print(f"🔍 [ENTRIES_BY_DATE] Returned {len(labour_entries)} labour entries")
         
-        # Get material entries for this site and date (all supervisors — shared view)
+        # Get material entries for this site and date for current supervisor only
         material_query = """
-            SELECT 
+            SELECT
                 m.id,
                 m.material_type,
                 m.quantity_used as quantity,
@@ -2194,12 +2313,12 @@ def get_entries_by_date(request):
                 0 as extra_cost,
                 m.notes as extra_cost_notes
             FROM material_usage m
-            WHERE m.site_id = %s AND m.usage_date = %s
+            WHERE m.site_id = %s AND m.usage_date = %s AND m.supervisor_id = %s
             ORDER BY m.created_at DESC
         """
-        material_entries = fetch_all(material_query, (site_id, entry_date))
+        material_entries = fetch_all(material_query, (site_id, entry_date, user_id))
         
-        # Check if material already submitted today for this site (any supervisor)
+        # Check if current supervisor already submitted material today for this site
         material_submitted_today = len(material_entries) > 0
         
         # Get photo count for this site, date, and supervisor
@@ -2210,17 +2329,18 @@ def get_entries_by_date(request):
         """, (site_id, entry_date, user_id))
         photo_count = photo_count_result['count'] if photo_count_result else 0
         
-        # Check if any site engineer submitted today for this site
-        has_site_engineer_entry = any(
-            (e.get('submitted_by_role') or '').lower() == 'site engineer'
-            for e in labour_entries
-        )
-        # Name of the site engineer who submitted (for lock banner)
-        site_engineer_name = next(
-            (e.get('supervisor_name') for e in labour_entries
-             if (e.get('submitted_by_role') or '').lower() == 'site engineer'),
-            None
-        )
+        # Check if any site engineer submitted entries for this site today
+        # (separate from current user's entries, for lock detection)
+        site_engineer_check = fetch_one("""
+            SELECT DISTINCT
+                COALESCE(u.full_name, u.phone) as supervisor_name
+            FROM labour_entries le
+            LEFT JOIN users u ON le.supervisor_id = u.id
+            WHERE le.site_id = %s AND le.entry_date = %s AND le.submitted_by_role = 'Site Engineer'
+            LIMIT 1
+        """, (site_id, entry_date))
+        has_site_engineer_entry = site_engineer_check is not None
+        site_engineer_name = site_engineer_check['supervisor_name'] if site_engineer_check else None
         
         return Response({
             'labour_entries': [
@@ -3557,41 +3677,69 @@ def submit_extra_cost(request):
     POST /api/construction/submit-extra-cost/
     """
     try:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f'📦 [EXTRA_COST] VIEW EXECUTED - Request data: {request.data}')
+        print(f'📦 [EXTRA_COST] REQUEST DATA: {request.data}', flush=True)
+
         user_id = request.user['user_id']
         site_id = request.data.get('site_id')
         amount = request.data.get('amount')
         description = request.data.get('description', '')
-        notes = request.data.get('notes', '')
-        
+
+        print(f'📦 [EXTRA_COST] Parsed: user_id={user_id}, site_id={site_id}, amount={amount}, description={description}')
+
         if not all([site_id, amount]):
-            return Response({'error': 'site_id and amount are required'}, 
+            print(f'📦 [EXTRA_COST] Validation failed: site_id={site_id}, amount={amount}')
+            return Response({'error': 'site_id and amount are required'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Validate amount
         try:
             amount = float(amount)
             if amount <= 0:
-                return Response({'error': 'Amount must be greater than 0'}, 
+                return Response({'error': 'Amount must be greater than 0'},
                               status=status.HTTP_400_BAD_REQUEST)
         except ValueError:
-            return Response({'error': 'Invalid amount format'}, 
+            return Response({'error': 'Invalid amount format'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Insert extra cost
         extra_cost_id = str(uuid.uuid4())
-        execute_query("""
-            INSERT INTO extra_works 
-            (id, site_id, description, amount, notes, uploaded_by, uploaded_at, payment_status)
-            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'PENDING')
-        """, (extra_cost_id, site_id, description, amount, notes, user_id))
-        
-        return Response({
+        print(f'📦 [EXTRA_COST] Inserting: id={extra_cost_id}, site_id={site_id}, description={description}, amount={amount}, uploaded_by={user_id}')
+
+        result = execute_query("""
+            INSERT INTO extra_works
+            (id, site_id, description, amount, uploaded_by)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (extra_cost_id, site_id, description, amount, user_id))
+
+        print(f'📦 [EXTRA_COST] Insert result: {result}')
+
+        if not result:
+            print(f'📦 [EXTRA_COST] Insert failed, returning 500 error')
+            return Response({
+                'error': 'Failed to submit extra cost - database error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        print(f'📦 [EXTRA_COST] Insert succeeded, returning 201', flush=True)
+        response = Response({
             'message': 'Extra cost submitted successfully',
             'extra_cost_id': extra_cost_id,
-            'amount': amount
+            'amount': amount,
+            'debug': {
+                'site_id': str(site_id),
+                'description': description,
+                'amount': amount
+            }
         }, status=status.HTTP_201_CREATED)
-        
+        response['X-Debug-Header'] = 'View-Executed'
+        return response
+
     except Exception as e:
+        print(f'📦 [EXTRA_COST] Exception: {str(e)}')
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -3600,45 +3748,52 @@ def submit_extra_cost(request):
 @permission_classes([IsAuthenticated])
 def get_extra_costs(request, site_id):
     """
-    Get all extra costs for a specific site
+    Get all extra costs for a specific site added by users with same role
     GET /api/construction/extra-costs/<site_id>/
     """
     try:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        user_role = request.user.get('role', '')
+        print(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_role={user_role}', flush=True)
+        logger.info(f'📦 [EXTRA_COST] GET - Fetching for site_id={site_id}, user_role={user_role}')
+
         extra_costs = fetch_all("""
-            SELECT 
+            SELECT
                 e.id,
+                e.site_id,
                 e.description,
-                e.amount,
-                e.notes,
-                e.payment_status,
-                e.uploaded_at,
-                e.paid_amount,
-                e.payment_date,
-                u.full_name as submitted_by
+                e.amount
             FROM extra_works e
             JOIN users u ON e.uploaded_by = u.id
-            WHERE e.site_id = %s
-            ORDER BY e.uploaded_at DESC
-        """, (site_id,))
-        
+            JOIN roles r ON u.role_id = r.id
+            WHERE e.site_id = %s AND r.role_name = %s
+            ORDER BY e.id DESC
+        """, (site_id, user_role))
+
+        print(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs', flush=True)
+        logger.info(f'📦 [EXTRA_COST] GET - Found {len(extra_costs) if extra_costs else 0} extra costs')
+        if extra_costs:
+            for ec in extra_costs:
+                print(f'📦 [EXTRA_COST] Row: {ec}', flush=True)
+
         return Response({
             'extra_costs': [
                 {
                     'id': str(ec['id']),
+                    'site_id': str(ec['site_id']),
                     'description': ec['description'],
                     'amount': float(ec['amount']) if ec['amount'] else 0,
-                    'notes': ec['notes'],
-                    'payment_status': ec['payment_status'],
-                    'uploaded_at': ec['uploaded_at'].isoformat() if ec['uploaded_at'] else None,
-                    'paid_amount': float(ec['paid_amount']) if ec['paid_amount'] else 0,
-                    'payment_date': ec['payment_date'].isoformat() if ec['payment_date'] else None,
-                    'submitted_by': ec['submitted_by'],
                 }
-                for ec in extra_costs
+                for ec in extra_costs or []
             ]
         }, status=status.HTTP_200_OK)
-        
+
     except Exception as e:
+        print(f'❌ [EXTRA_COST] GET ERROR: {str(e)}', flush=True)
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -5069,37 +5224,73 @@ def add_client_requirement(request):
     try:
         user_role = request.user.get('role', '')
         user_id = request.user.get('user_id')
-        
+
         # Allow Accountant, Supervisor, and Site Engineer to add client requirements
         if user_role not in ['Accountant', 'Supervisor', 'Site Engineer']:
-            return Response({'error': 'Only Accountant, Supervisor, or Site Engineer can add client requirements'}, 
+            return Response({'error': 'Only Accountant, Supervisor, or Site Engineer can add client requirements'},
                           status=status.HTTP_403_FORBIDDEN)
-        
+
         site_id = request.data.get('site_id')
         description = request.data.get('description')
         amount = request.data.get('amount')
-        
+
         if not site_id or not description or amount is None:
-            return Response({'error': 'site_id, description and amount are required'}, 
+            return Response({'error': 'site_id, description and amount are required'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
+        # Get site name and user name for notification
+        site_info = fetch_one("""
+            SELECT site_name FROM sites WHERE id = %s
+        """, (site_id,))
+
+        user_info = fetch_one("""
+            SELECT full_name FROM users WHERE id = %s
+        """, (user_id,))
+
+        site_name = site_info['site_name'] if site_info else 'Unknown Site'
+        user_name = user_info['full_name'] if user_info else 'Unknown User'
+
         # Insert client requirement
         requirement_id = str(uuid.uuid4())
         insert_query = """
-            INSERT INTO client_requirements 
+            INSERT INTO client_requirements
             (requirement_id, site_id, description, amount, added_by, added_date, status)
             VALUES (%s, %s, %s, %s, %s, NOW(), 'Pending')
         """
-        
+
         execute_query(insert_query, (requirement_id, site_id, description, amount, user_id))
-        
+
+        # Create notification for admin
+        notification_id = str(uuid.uuid4())
+        notification_message = f"{user_name} added a new site requirement: {description} (₹{amount})"
+
+        notification_query = """
+            INSERT INTO notifications
+            (id, site_id, entry_type, message, actual_time, supervisor_id, supervisor_name, site_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        execute_query(notification_query, (
+            notification_id,
+            site_id,
+            'Site Requirement',
+            notification_message,
+            None,
+            user_id,
+            user_name,
+            site_name
+        ))
+
         return Response({
             'message': 'Client requirement added successfully',
-            'requirement_id': requirement_id
+            'requirement_id': requirement_id,
+            'notification_id': notification_id
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         print(f"❌ Error adding client requirement: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -5162,6 +5353,105 @@ def get_client_requirements(request):
         traceback.print_exc()
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['PUT'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def update_client_requirement(request, requirement_id):
+    """
+    Supervisor/Site Engineer: Update client requirement
+    PUT /api/accountant/update-client-requirement/<requirement_id>/
+    Body: {
+        "description": "Updated description",
+        "amount": 60000
+    }
+    """
+    try:
+        user_role = request.user.get('role', '')
+        user_id = request.user.get('user_id')
+
+        # Allow Accountant, Supervisor, and Site Engineer to update client requirements
+        if user_role not in ['Accountant', 'Supervisor', 'Site Engineer']:
+            return Response({'error': 'Only Accountant, Supervisor, or Site Engineer can update client requirements'},
+                          status=status.HTTP_403_FORBIDDEN)
+
+        description = request.data.get('description')
+        amount = request.data.get('amount')
+
+        if not description and amount is None:
+            return Response({'error': 'At least description or amount must be provided'},
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        # Get current requirement details
+        requirement = fetch_one("""
+            SELECT site_id, description, amount FROM client_requirements
+            WHERE requirement_id = %s
+        """, (requirement_id,))
+
+        if not requirement:
+            return Response({'error': 'Requirement not found'},
+                          status=status.HTTP_404_NOT_FOUND)
+
+        site_id = requirement['site_id']
+
+        # Update the requirement
+        update_query = """
+            UPDATE client_requirements
+            SET description = %s, amount = %s, updated_at = NOW()
+            WHERE requirement_id = %s
+        """
+
+        execute_query(update_query, (
+            description or requirement['description'],
+            amount if amount is not None else requirement['amount'],
+            requirement_id
+        ))
+
+        # Get updated values and user info for notification
+        user_info = fetch_one("""
+            SELECT full_name FROM users WHERE id = %s
+        """, (user_id,))
+
+        site_info = fetch_one("""
+            SELECT site_name FROM sites WHERE id = %s
+        """, (site_id,))
+
+        user_name = user_info['full_name'] if user_info else 'Unknown User'
+        site_name = site_info['site_name'] if site_info else 'Unknown Site'
+        final_amount = amount if amount is not None else requirement['amount']
+
+        # Create notification for admin
+        notification_id = str(uuid.uuid4())
+        notification_message = f"{user_name} updated a site requirement: {description or requirement['description']} (₹{final_amount})"
+
+        notification_query = """
+            INSERT INTO notifications
+            (id, site_id, entry_type, message, actual_time, supervisor_id, supervisor_name, site_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        execute_query(notification_query, (
+            notification_id,
+            site_id,
+            'Site Requirement',
+            notification_message,
+            None,
+            user_id,
+            user_name,
+            site_name
+        ))
+
+        return Response({
+            'message': 'Client requirement updated successfully',
+            'requirement_id': requirement_id,
+            'notification_id': notification_id
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"❌ Error updating client requirement: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])

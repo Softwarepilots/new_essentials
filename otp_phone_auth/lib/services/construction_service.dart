@@ -1,6 +1,9 @@
 ﻿import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'auth_service.dart';
 
 class ConstructionService {
@@ -372,19 +375,93 @@ class ConstructionService {
       print('🔍 [MATERIAL] Request body: $body');
 
       final response = await http.post(
-        Uri.parse('$baseUrl/construction/material-balance/'),
+        Uri.parse('$baseUrl/construction/submit-material-balance/'),
         headers: await _getHeaders(),
         body: json.encode(body),
       );
 
+      print('🔍 [MATERIAL] Response status code: ${response.statusCode}');
+      print('🔍 [MATERIAL] Response body: ${response.body}');
+
       final data = json.decode(response.body);
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return {'success': true, 'message': data['message']};
       } else {
         return {'success': false, 'error': data['error'] ?? 'Failed to submit'};
       }
     } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  Future<Map<String, dynamic>> submitExtraCost({
+    required String siteId,
+    required double amount,
+    required String description,
+    DateTime? entryDate,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final now = DateTime.now();
+      final istNow = now.add(const Duration(hours: 5, minutes: 30));
+
+      final body = {
+        'site_id': siteId,
+        'amount': amount,
+        'description': description,
+        'entry_date': (entryDate ?? istNow).toIso8601String().split('T')[0],
+        'entry_time': istNow.toIso8601String(),
+      };
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/construction/extra-cost/'),
+        headers: headers,
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('✅ [EXTRA_COST] Submitted successfully');
+        return {'success': true, 'data': data};
+      } else {
+        print('❌ [EXTRA_COST] Failed: ${response.body}');
+        return {'success': false, 'error': 'Failed to submit extra cost'};
+      }
+    } catch (e) {
+      print('❌ [EXTRA_COST] Exception: $e');
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
+
+  // TEST METHOD - Remove after debugging
+  Future<Map<String, dynamic>> testMaterialBalance({
+    required String siteId,
+    required List<Map<String, dynamic>> materials,
+  }) async {
+    try {
+      final body = {'site_id': siteId, 'materials': materials};
+      print('🧪 [TEST] Testing POST to /api/construction/test-material/');
+      print('🧪 [TEST] Request body: $body');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/construction/test-material/'),
+        headers: await _getHeaders(),
+        body: json.encode(body),
+      );
+
+      print('🧪 [TEST] Response status: ${response.statusCode}');
+      print('🧪 [TEST] Response body: ${response.body}');
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      } else {
+        return {'success': false, 'error': data['error'] ?? 'Test failed'};
+      }
+    } catch (e) {
+      print('🧪 [TEST] Exception: $e');
       return {'success': false, 'error': 'Network error: $e'};
     }
   }
@@ -830,8 +907,10 @@ class ConstructionService {
         final data = json.decode(response.body);
         final labourCount = (data['labour_entries'] as List?)?.length ?? 0;
         final materialCount = (data['material_entries'] as List?)?.length ?? 0;
+        final extraCostsCount = (data['extra_costs'] as List?)?.length ?? 0;
         print('✅ [ACCOUNTANT] Labour entries: $labourCount');
         print('✅ [ACCOUNTANT] Material entries: $materialCount');
+        print('✅ [ACCOUNTANT] Extra costs: $extraCostsCount');
 
         if (labourCount > 0) {
           print(
@@ -843,7 +922,7 @@ class ConstructionService {
       } else {
         print('❌ [ACCOUNTANT] Error response: ${response.body}');
       }
-      return {'labour_entries': [], 'material_entries': []};
+      return {'labour_entries': [], 'material_entries': [], 'extra_costs': []};
     } catch (e) {
       print('❌ [ACCOUNTANT] Exception: $e');
       return {'labour_entries': [], 'material_entries': []};
@@ -1294,6 +1373,40 @@ class ConstructionService {
   // SUPERVISOR: UPLOAD PHOTOS
   // ============================================
 
+  Future<List<int>> _compressImage(XFile photoFile) async {
+    try {
+      final bytes = await photoFile.readAsBytes();
+      final originalSize = bytes.length;
+
+      // Decode the image
+      final image = img.decodeImage(bytes);
+      if (image == null) {
+        print('⚠️ [COMPRESS] Could not decode image, using original');
+        return bytes;
+      }
+
+      // Resize image to max 1000x800px to reduce file size
+      final resized = img.copyResize(
+        image,
+        width: image.width > 1000 ? 1000 : image.width,
+        height: image.height > 800 ? 800 : image.height,
+        interpolation: img.Interpolation.linear,
+      );
+
+      // Encode back to JPEG with 85% quality
+      final compressedBytes = img.encodeJpg(resized, quality: 85);
+
+      final compressedSize = compressedBytes.length;
+      final reduction = ((1 - (compressedSize / originalSize)) * 100).toStringAsFixed(1);
+      print('📸 [COMPRESS] ${photoFile.name}: ${(originalSize / 1024).toStringAsFixed(0)}KB → ${(compressedSize / 1024).toStringAsFixed(0)}KB ($reduction% reduction)');
+
+      return compressedBytes;
+    } catch (e) {
+      print('⚠️ [COMPRESS] Error compressing image: $e, using original');
+      return await photoFile.readAsBytes();
+    }
+  }
+
   Future<Map<String, dynamic>> uploadSupervisorPhotos({
     required String siteId,
     required List<dynamic> photos, // List of XFile
@@ -1314,12 +1427,13 @@ class ConstructionService {
       request.fields['site_id'] = siteId.toString();
       request.fields['time_of_day'] = timeOfDay;
 
-      // Add photos - Web and Mobile compatible
+      // Add photos with compression - Web and Mobile compatible
       for (var photo in photos) {
-        final bytes = await photo.readAsBytes();
+        final compressedBytes = await _compressImage(photo);
+
         final file = http.MultipartFile.fromBytes(
           'photos',
-          bytes,
+          compressedBytes,
           filename: photo.name,
         );
         request.files.add(file);
@@ -1656,6 +1770,44 @@ class ConstructionService {
       }
     } catch (e) {
       print('❌ Error adding client requirement: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateClientRequirement(
+    String requirementId,
+    String? description,
+    double? amount,
+  ) async {
+    try {
+      final token = await _authService.getToken();
+      if (token == null) return false;
+
+      final body = <String, dynamic>{};
+      if (description != null) body['description'] = description;
+      if (amount != null) body['amount'] = amount;
+
+      if (body.isEmpty) return false;
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/accountant/update-client-requirement/$requirementId/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print(
+          '❌ Failed to update client requirement: ${response.statusCode} - ${response.body}',
+        );
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error updating client requirement: $e');
       return false;
     }
   }

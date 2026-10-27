@@ -10,6 +10,8 @@ import '../utils/app_colors.dart';
 import '../utils/time_validator.dart';
 import 'supervisor_history_screen.dart';
 import 'supervisor_photo_upload_screen.dart';
+import 'site_engineer_material_screen.dart';
+import 'site_extra_cost_screen.dart';
 
 enum _SiteEntryStatus {
   none, // no entries today — FAB opens locked quick actions
@@ -240,11 +242,12 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final labourDone =
         labourEntries.isNotEmpty || _entrySession.isLabourComplete;
     final photoDone = photoCount > 0 || _entrySession.isPhotoComplete;
-    final isMorningComplete = labourDone && photoDone;
+    final isMorningComplete = labourDone && photoDone && materialSubmittedToday;
     print(
       '🔓 [QUICK_ACTIONS] Morning complete: $isMorningComplete '
       '(labour: server=${labourEntries.isNotEmpty} session=${_entrySession.isLabourComplete}, '
-      'photos: server=${photoCount > 0} session=${_entrySession.isPhotoComplete})',
+      'photos: server=${photoCount > 0} session=${_entrySession.isPhotoComplete}, '
+      'material: $materialSubmittedToday)',
     );
 
     showModalBottomSheet(
@@ -265,9 +268,10 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    'Complete Labour & Photo to exit. '
+                    'Complete Labour, Photo & Material to exit. '
                     '(${_entrySession.isLabourComplete ? "✅" : "⬜"} Labour  '
-                    '${_entrySession.isPhotoComplete ? "✅" : "⬜"} Photo)',
+                    '${_entrySession.isPhotoComplete ? "✅" : "⬜"} Photo  '
+                    '${materialSubmittedToday ? "✅" : "⬜"} Material)',
                   ),
                   backgroundColor: Colors.orange.shade700,
                   behavior: SnackBarBehavior.floating,
@@ -627,11 +631,16 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         siteId: widget.site['id'],
         onSuccess: () {
           // Entry sheet already called Navigator.pop before this callback.
-          // Just mark complete (notifies listeners → quick actions sheet rebuilds).
+          // Reload data and reopen Quick Actions with fresh material status
           _entrySession.markComplete('material');
           print('✅ [ENTRY_SESSION] Material marked complete');
           _invalidateCache();
-          _loadTodayEntries();
+          _loadTodayEntries().then((_) {
+            // After data loads, reopen Quick Actions with fresh state
+            if (mounted) {
+              _showQuickActions();
+            }
+          });
           SupervisorHistoryScreen.invalidateCache(widget.site['id']);
         },
         onMaterialUpdated: () {
@@ -743,6 +752,21 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
         ),
       ),
     );
+  }
+
+  void _openMaterialInventory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SiteEngineerMaterialScreen(
+          siteId: widget.site['id'],
+          siteName: widget.site['display_name'] ?? widget.site['site_name'] ?? 'Site',
+        ),
+      ),
+    ).then((_) {
+      // Reload today's entries when returning from inventory
+      _loadTodayEntries();
+    });
   }
 
   void _showMaterialRequirementDialog() {
@@ -892,6 +916,15 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openExtraCostScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SiteExtraCostScreen(site: widget.site),
       ),
     );
   }
@@ -1143,6 +1176,26 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
                               ),
                             ),
                           ),
+                          // Inventory Button
+                          ElevatedButton.icon(
+                            onPressed: () => _openMaterialInventory(),
+                            icon: Icon(Icons.inventory_2, size: 18.sp),
+                            label: Text(
+                              'Inventory',
+                              style: TextStyle(fontSize: 13.sp),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.statusCompleted,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 12.w,
+                                vertical: 8.h,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8.r),
+                              ),
+                            ),
+                          ),
                           // Container(
                           //   decoration: BoxDecoration(
                           //     color: AppColors.deepNavy.withValues(alpha: 0.1),
@@ -1182,6 +1235,30 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
                           //   ),
                           // ),
                         ],
+                      ),
+                      SizedBox(height: 8.h),
+                      // Extra Cost Button
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _openExtraCostScreen(),
+                          icon: Icon(Icons.attach_money, size: 18.sp),
+                          label: Text(
+                            'Extra Cost',
+                            style: TextStyle(fontSize: 13.sp),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade600,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 12.w,
+                              vertical: 8.h,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8.r),
+                            ),
+                          ),
+                        ),
                       ),
                       SizedBox(height: 12.h),
                       // IST Time Display
@@ -2105,7 +2182,7 @@ class _QuickActionsSheetState extends State<_QuickActionsSheet> {
     // after submission without needing a full data reload.
     final labourDone = widget.hasLabourData || session.isLabourComplete;
     final photoDone = widget.hasPhotoData || session.isPhotoComplete;
-    final allDone = labourDone && photoDone;
+    final allDone = labourDone && photoDone && materialDone;
 
     return Container(
       decoration: const BoxDecoration(
@@ -2137,8 +2214,8 @@ class _QuickActionsSheetState extends State<_QuickActionsSheet> {
           const SizedBox(height: 6),
           Text(
             allDone
-                ? 'Labour & Photo done — you can go back anytime'
-                : 'Complete Labour & Photo to go back',
+                ? 'Labour, Photo & Material done — you can go back anytime'
+                : 'Complete Labour, Photo & Material to go back',
             style: TextStyle(
               fontSize: 12,
               color: allDone ? Colors.green.shade600 : Colors.grey.shade500,
@@ -2158,13 +2235,13 @@ class _QuickActionsSheetState extends State<_QuickActionsSheet> {
             onTap: widget.onLabourTap, // Always allow tap
           ),
           const SizedBox(height: 12),
-          // Material — one-time per site per day (optional for unlock)
+          // Material — one-time per site per day (required for unlock)
           _buildActionCard(
             icon: Icons.inventory_2_outlined,
             title: 'Material Balance',
             subtitle: materialDone
-                ? 'Already submitted today (site-wide)'
-                : 'Update materials — once per day',
+                ? 'Completed ✓'
+                : 'Update materials — required to continue',
             color: AppColors.statusCompleted,
             isDone: materialDone,
             isLocked: materialDone,
@@ -2201,7 +2278,7 @@ class _QuickActionsSheetState extends State<_QuickActionsSheet> {
               onPressed: allDone ? widget.onAllComplete : null,
               icon: Icon(allDone ? Icons.check_circle : Icons.lock, size: 20),
               label: Text(
-                allDone ? 'Done' : 'Complete Labour & Photo to go back',
+                allDone ? 'Done' : 'Complete Labour, Photo & Material to go back',
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: allDone
@@ -2824,8 +2901,6 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
 
     // Morning tab - editable form
     final labourCounts = _morningLabourCounts;
-    final extraCostController = _morningExtraCostController;
-    final extraCostNotesController = _morningExtraCostNotesController;
     final morningLocked = widget.morningAlreadySubmitted;
 
     return SingleChildScrollView(
@@ -2872,213 +2947,6 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
                   .toList(),
             ),
           ),
-          const SizedBox(height: 20),
-          // Extra Cost Section with Modern Design
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.orange.shade50,
-                  Colors.orange.shade100.withValues(alpha: 0.3),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.orange.shade300, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.orange.shade600,
-                            Colors.orange.shade400,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.orange.withValues(alpha: 0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.attach_money,
-                        size: 22,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Extra Cost',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange.shade900,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        Text(
-                          'Optional expenses',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade700,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: extraCostController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Enter amount',
-                      hintStyle: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontWeight: FontWeight.normal,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade200,
-                          width: 1.5,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade600,
-                          width: 2,
-                        ),
-                      ),
-                      prefixIcon: Container(
-                        margin: const EdgeInsets.all(10),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.orange.shade400,
-                              Colors.orange.shade600,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.currency_rupee,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: extraCostNotesController,
-                    maxLines: 2,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Notes (e.g., transport, tools, materials)',
-                      hintStyle: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontSize: 13,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade200,
-                          width: 1.5,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade600,
-                          width: 2,
-                        ),
-                      ),
-                      prefixIcon: Icon(
-                        Icons.note_alt_outlined,
-                        color: Colors.orange.shade600,
-                        size: 22,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
           // Modern Submit Button with Gradient
           Container(
             decoration: BoxDecoration(
@@ -4050,10 +3918,6 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
 
     setState(() => _isSubmitting = true);
 
-    // Parse extra cost
-    final extraCost = double.tryParse(extraCostController.text.trim()) ?? 0;
-    final extraCostNotes = extraCostNotesController.text.trim();
-
     print('🕒 [LABOUR] About to submit with selected time: $selectedDateTime');
     print('🕒 [LABOUR] Current IST time: ${TimeValidator.getISTTime()}');
     print('🕒 [LABOUR] Is on time: $isOnTime');
@@ -4068,8 +3932,6 @@ class _LabourEntrySheetState extends State<_LabourEntrySheet>
           siteId: widget.siteId,
           labourCount: entry.value,
           labourType: entry.key,
-          extraCost: extraCost > 0 ? extraCost : null,
-          extraCostNotes: extraCostNotes.isNotEmpty ? extraCostNotes : null,
           customDateTime: selectedDateTime,
         );
         if (result['success'] == true) {
@@ -4349,8 +4211,6 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
   Map<String, double> _materialQuantities = {};
   List<Map<String, dynamic>> _availableMaterials = [];
   bool _isLoadingMaterials = false;
-  final _extraCostController = TextEditingController();
-  final _extraCostNotesController = TextEditingController();
   bool _isSubmitting = false;
   late DateTime _selectedDateTime;
 
@@ -4397,8 +4257,6 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
   @override
   void dispose() {
     _tabController.dispose();
-    _extraCostController.dispose();
-    _extraCostNotesController.dispose();
     super.dispose();
   }
 
@@ -4629,212 +4487,6 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
                   .map((type) => _buildMaterialTypeRow(type))
                   .toList(),
             ),
-          const SizedBox(height: 20),
-          // Modern Extra Cost Section for Materials
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.orange.shade50,
-                  Colors.orange.shade100.withValues(alpha: 0.3),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.orange.shade300, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.orange.shade600,
-                            Colors.orange.shade400,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.orange.withValues(alpha: 0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.attach_money,
-                        size: 22,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Extra Cost',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange.shade900,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        Text(
-                          'Optional expenses',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade700,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _extraCostController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Enter amount',
-                      hintStyle: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontWeight: FontWeight.normal,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade200,
-                          width: 1.5,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade600,
-                          width: 2,
-                        ),
-                      ),
-                      prefixIcon: Container(
-                        margin: const EdgeInsets.all(10),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.orange.shade400,
-                              Colors.orange.shade600,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.currency_rupee,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _extraCostNotesController,
-                    maxLines: 2,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Notes (e.g., transport, tools, materials)',
-                      hintStyle: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontSize: 13,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade200,
-                          width: 1.5,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: Colors.orange.shade600,
-                          width: 2,
-                        ),
-                      ),
-                      prefixIcon: Icon(
-                        Icons.note_alt_outlined,
-                        color: Colors.orange.shade600,
-                        size: 22,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _totalItems > 0 && !_isSubmitting ? _submit : null,
@@ -5265,7 +4917,7 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${quantity.toInt()} $unit',
+                                  'Left: ${quantity.toInt()} $unit',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Colors.white,
@@ -5315,104 +4967,91 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
             ],
           ),
           const SizedBox(height: 14),
-          // Modern Slider with value display
-          Row(
+          // Number input with +/- buttons - Stocks Left
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SliderTheme(
-                      data: SliderThemeData(
-                        activeTrackColor: Colors.green.shade600,
-                        inactiveTrackColor: Colors.grey.shade200,
-                        thumbColor: Colors.green.shade700,
-                        overlayColor: Colors.green.withValues(alpha: 0.2),
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 12,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 22,
-                        ),
-                        trackHeight: 6,
-                        activeTickMarkColor: Colors.transparent,
-                        inactiveTickMarkColor: Colors.transparent,
-                      ),
-                      child: Slider(
-                        value: quantity,
-                        min: 0,
-                        max: availableBalance > 0 ? availableBalance : 100,
-                        divisions:
-                            (availableBalance > 0 ? availableBalance : 100)
-                                .toInt(),
-                        onChanged: (value) =>
-                            setState(() => _materialQuantities[type] = value),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '0',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade500,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Text(
-                            '${(availableBalance > 0 ? availableBalance : 100).toInt()}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade500,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              Text(
+                'Stocks Left',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(width: 12),
-              // Value display
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  gradient: quantity > 0
-                      ? LinearGradient(
-                          colors: [
-                            Colors.green.shade600,
-                            Colors.green.shade400,
-                          ],
-                        )
-                      : LinearGradient(
-                          colors: [Colors.grey.shade300, Colors.grey.shade200],
-                        ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: quantity > 0
-                      ? [
-                          BoxShadow(
-                            color: Colors.green.withValues(alpha: 0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : [],
-                ),
-                child: Text(
-                  '${quantity.toInt()}',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: quantity > 0 ? Colors.white : Colors.grey.shade600,
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  // Minus button
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        final newValue = (quantity - 1).clamp(0.0, double.infinity);
+                        _materialQuantities[type] = newValue;
+                      });
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.all(8),
+                      backgroundColor: Colors.grey.shade300,
+                      foregroundColor: Colors.grey.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Icon(Icons.remove, size: 20),
                   ),
+                  const SizedBox(width: 12),
+                  // Number display with text input
+                  Expanded(
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        hintText: '0',
+                      ),
+                      controller: TextEditingController(text: quantity.toInt().toString())
+                        ..selection = TextSelection.fromPosition(
+                          TextPosition(offset: quantity.toInt().toString().length),
+                        ),
+                      onChanged: (value) {
+                        final numValue = double.tryParse(value) ?? 0;
+                        setState(() => _materialQuantities[type] = numValue.clamp(0.0, availableBalance));
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Plus button
+                  ElevatedButton(
+                    onPressed: quantity < availableBalance
+                        ? () {
+                            setState(() {
+                              _materialQuantities[type] = (quantity + 1).clamp(0.0, availableBalance);
+                            });
+                          }
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.all(8),
+                      backgroundColor: quantity < availableBalance ? Colors.green.shade600 : Colors.grey.shade300,
+                      foregroundColor: quantity < availableBalance ? Colors.white : Colors.grey.shade500,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Icon(Icons.add, size: 20),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Max available: ${availableBalance.toInt()} $unit',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade500,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -5459,27 +5098,48 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
     print('🕒 [MATERIAL] Is on time: $isOnTime');
     print('🕒 [MATERIAL] Time window: 4:00 PM - 7:00 PM IST');
 
-    // Parse extra cost
-    final extraCost = double.tryParse(_extraCostController.text.trim()) ?? 0;
-    final extraCostNotes = _extraCostNotesController.text.trim();
-
     // Prepare materials list with correct units from available materials
-    final materials = _materialQuantities.entries
-        .where((entry) => entry.value > 0)
-        .map((entry) {
-          // Find the material data to get the correct unit
-          final materialData = _availableMaterials.firstWhere(
-            (m) => m['material_type'] == entry.key,
-            orElse: () => {'unit': 'units'},
-          );
+    // Convert stocks left to quantity used
+    final materials = <Map<String, dynamic>>[];
 
-          return {
-            'material_type': entry.key,
-            'quantity': entry.value,
-            'unit': materialData['unit'] as String? ?? 'units',
-          };
-        })
-        .toList();
+    print('📦 [MATERIAL] Available materials: $_availableMaterials');
+    print('📦 [MATERIAL] Material quantities (slider values): $_materialQuantities');
+
+    for (final entry in _materialQuantities.entries) {
+      print('🔍 [MATERIAL] Processing: ${entry.key} = ${entry.value}');
+
+      if (entry.value < 0) {
+        print('⏭️ [MATERIAL] Skipping ${entry.key} - negative value');
+        continue;
+      }
+
+      // Find the material data to get the correct unit and current balance
+      final materialData = _availableMaterials.firstWhere(
+        (m) => m['material_type'] == entry.key,
+        orElse: () => {},
+      );
+
+      if (materialData.isEmpty) {
+        print('⏭️ [MATERIAL] Skipping ${entry.key} - material data not found');
+        continue;
+      }
+
+      final currentBalance = (materialData['current_balance'] as num?)?.toDouble() ?? 0.0;
+      final stocksLeft = entry.value;
+      final quantityUsed = (currentBalance - stocksLeft).clamp(0.0, double.infinity);
+
+      print(
+        '📊 [MATERIAL] ${entry.key}: balance=$currentBalance, left=$stocksLeft, used=$quantityUsed',
+      );
+
+      // Include materials with zero or positive usage
+      materials.add({
+        'material_type': entry.key,
+        'quantity': quantityUsed,
+        'unit': materialData['unit'] as String? ?? 'units',
+      });
+      print('✅ [MATERIAL] Added ${entry.key} with usage $quantityUsed');
+    }
 
     // Show confirmation dialog first
     final confirmed = await showDialog<bool>(
@@ -5499,12 +5159,24 @@ class _MaterialEntrySheetState extends State<_MaterialEntrySheet>
     print(
       '🕒 [MATERIAL] About to submit with selected time: $_selectedDateTime',
     );
+    print('📦 [MATERIAL] Materials to submit: $materials');
+
+    if (materials.isEmpty) {
+      setState(() => _isSubmitting = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No materials with usage to submit'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
     final result = await _constructionService.submitMaterialBalance(
       siteId: widget.siteId,
       materials: materials,
-      extraCost: extraCost > 0 ? extraCost : null,
-      extraCostNotes: extraCostNotes.isNotEmpty ? extraCostNotes : null,
       customDateTime: _selectedDateTime, // Pass the selected local time
     );
 

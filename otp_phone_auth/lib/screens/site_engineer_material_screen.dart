@@ -293,6 +293,18 @@ class _SiteEngineerMaterialScreenState extends State<SiteEngineerMaterialScreen>
                     Icons.remove_circle_outline,
                   ),
                 ),
+                Container(
+                  width: 1,
+                  height: 40.h,
+                  color: AppColors.divider,
+                ),
+                Expanded(
+                  child: _buildInfoColumn(
+                    'Stocks Left',
+                    '${(initialStock - totalUsed).toStringAsFixed(1)} $unit',
+                    Icons.inventory_2,
+                  ),
+                ),
               ],
             ),
 
@@ -359,6 +371,19 @@ class _SiteEngineerMaterialScreenState extends State<SiteEngineerMaterialScreen>
                 ),
               ],
             ),
+            SizedBox(height: 8.h),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showEditStocksLeftDialog(material, initialStock, totalUsed),
+                icon: Icon(Icons.edit, size: 18.sp),
+                label: Text('Edit Stocks Left'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.green,
+                  side: BorderSide(color: Colors.green),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -397,6 +422,23 @@ class _SiteEngineerMaterialScreenState extends State<SiteEngineerMaterialScreen>
         siteId: widget.siteId,
         materialType: material['material_type'],
         unit: material['unit'],
+        onSuccess: () {
+          _loadMaterialData();
+        },
+      ),
+    );
+  }
+
+  void _showEditStocksLeftDialog(Map<String, dynamic> material, double initialStock, double totalUsed) {
+    showDialog(
+      context: context,
+      builder: (context) => _EditStocksLeftDialog(
+        siteId: widget.siteId,
+        materialType: material['material_type'],
+        unit: material['unit'],
+        currentStocksLeft: initialStock - totalUsed,
+        initialStock: initialStock,
+        totalUsed: totalUsed,
         onSuccess: () {
           _loadMaterialData();
         },
@@ -834,6 +876,238 @@ class _AddStockDialogState extends State<_AddStockDialog> {
                   ),
                 )
               : Text('Add Stock'),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================
+// EDIT STOCKS LEFT DIALOG
+// ============================================
+
+class _EditStocksLeftDialog extends StatefulWidget {
+  final String siteId;
+  final String materialType;
+  final String unit;
+  final double currentStocksLeft;
+  final double initialStock;
+  final double totalUsed;
+  final VoidCallback onSuccess;
+
+  const _EditStocksLeftDialog({
+    required this.siteId,
+    required this.materialType,
+    required this.unit,
+    required this.currentStocksLeft,
+    required this.initialStock,
+    required this.totalUsed,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_EditStocksLeftDialog> createState() => _EditStocksLeftDialogState();
+}
+
+class _EditStocksLeftDialogState extends State<_EditStocksLeftDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _stocksLeftController;
+  final _materialService = MaterialService();
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _stocksLeftController = TextEditingController(
+      text: widget.currentStocksLeft.toStringAsFixed(1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _stocksLeftController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final newStocksLeft = double.parse(_stocksLeftController.text);
+      final newTotalUsed = widget.initialStock - newStocksLeft;
+      final difference = newTotalUsed - widget.totalUsed;
+
+      // Record the difference as usage
+      final result = await _materialService.recordMaterialUsage(
+        siteId: widget.siteId,
+        materialType: widget.materialType,
+        quantityUsed: difference,
+        unit: widget.unit,
+        notes: 'Stocks left adjusted to ${newStocksLeft.toStringAsFixed(1)} ${widget.unit}',
+      );
+
+      if (result['success'] == true) {
+        Navigator.pop(context);
+        widget.onSuccess();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Stocks left updated successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['error'] ?? 'Failed to update stocks left'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stocksLeftValue = double.tryParse(_stocksLeftController.text.trim()) ?? widget.currentStocksLeft;
+    final newTotalUsed = widget.initialStock - stocksLeftValue;
+    final difference = newTotalUsed - widget.totalUsed;
+
+    return AlertDialog(
+      backgroundColor: AppColors.white,
+      title: Text('Edit Stocks Left', style: TextStyle(color: AppColors.textPrimary)),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Material: ${widget.materialType}',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13.sp),
+            ),
+            SizedBox(height: 4.h),
+            Text(
+              'Initial Stock: ${widget.initialStock.toStringAsFixed(1)} ${widget.unit}',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12.sp),
+            ),
+            SizedBox(height: 12.h),
+            TextFormField(
+              controller: _stocksLeftController,
+              decoration: InputDecoration(
+                labelText: 'Stocks Left (${widget.unit})',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter stocks left';
+                }
+                final amount = double.tryParse(value);
+                if (amount == null) {
+                  return 'Please enter valid number';
+                }
+                if (amount < 0) {
+                  return 'Stocks left cannot be negative';
+                }
+                if (amount > widget.initialStock) {
+                  return 'Stocks left cannot exceed initial stock (${widget.initialStock.toStringAsFixed(1)})';
+                }
+                return null;
+              },
+            ),
+            SizedBox(height: 16.h),
+            Container(
+              padding: EdgeInsets.all(12.r),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8.r),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Updated Values:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                      fontSize: 12.sp,
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'New Total Used:',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12.sp),
+                      ),
+                      Text(
+                        '${newTotalUsed.toStringAsFixed(1)} ${widget.unit}',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.sp,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (difference.abs() > 0.01) ...[
+                    SizedBox(height: 4.h),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Difference:',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12.sp),
+                        ),
+                        Text(
+                          '${difference > 0 ? '+' : ''}${difference.toStringAsFixed(1)} ${widget.unit}',
+                          style: TextStyle(
+                            color: difference > 0 ? Colors.red : Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.sp,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+        ),
+        ElevatedButton(
+          onPressed: _isSubmitting ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: AppColors.white,
+          ),
+          child: _isSubmitting
+              ? SizedBox(
+                  width: 20.w,
+                  height: 20.h,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.white,
+                  ),
+                )
+              : Text('Update'),
         ),
       ],
     );

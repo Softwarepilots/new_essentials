@@ -177,7 +177,8 @@ urlpatterns = [
     # Supervisor endpoints
     path('construction/labour/', views_construction.submit_labour_count, name='submit-labour'),
     path('construction/check-entry-lock/', views_construction.check_entry_lock, name='check-entry-lock'),
-    path('construction/material-balance/', views_construction.submit_material_balance, name='submit-material-balance'),
+    path('construction/test-material/', views_construction.test_material_balance, name='test-material-balance'),
+    path('construction/submit-material-balance/', views_construction.submit_material_balance, name='submit-material-balance'),
     path('construction/today-entries/', views_construction.get_today_entries, name='get-today-entries'),
     path('construction/today-entries-supervisor/', views_construction.get_today_entries_for_supervisor, name='get-today-entries-supervisor'),
     path('construction/aggregated-today-entries/', views_construction.get_aggregated_today_entries, name='get-aggregated-today-entries'),
@@ -190,6 +191,7 @@ urlpatterns = [
     path('construction/accountant/all-entries/', views_construction.get_all_entries_for_accountant, name='accountant-all-entries'),
     path('construction/accountant/all-photos/', views_construction.get_all_site_photos_for_accountant, name='accountant-all-photos'),
     path('accountant/add-client-requirement/', views_construction.add_client_requirement, name='add-client-requirement'),
+    path('accountant/update-client-requirement/<uuid:requirement_id>/', views_construction.update_client_requirement, name='update-client-requirement'),
     path('admin/client-requirements/', views_construction.get_client_requirements, name='get-client-requirements'),
     
     # ============================================
@@ -333,6 +335,7 @@ urlpatterns = [
     
     # Phase Payment Management
     path('budget/record-phase-payment/', views_budget_management.record_phase_payment, name='record-phase-payment'),
+    path('budget/update-phase-payment/', views_budget_management.update_phase_payment, name='update-phase-payment'),
     path('budget/phase-payments/<str:site_id>/', views_budget_management.get_phase_payments, name='get-phase-payments'),
     
     # ============================================

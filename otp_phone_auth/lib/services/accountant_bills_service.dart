@@ -9,7 +9,7 @@ class AccountantBillsService {
   AccountantBillsService._internal();
 
   final _authService = AuthService();
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
 
   Future<Map<String, String>> _getHeaders() async {
     final token = await _authService.getToken();

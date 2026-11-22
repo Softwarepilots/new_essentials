@@ -10,7 +10,13 @@ def get_db_connection():
         user=settings.DATABASES['default']['USER'],
         password=settings.DATABASES['default']['PASSWORD'],
         sslmode='require',
-        client_encoding='UTF8'
+        client_encoding='UTF8',
+        # Needed for Supabase's transaction pooler (port 6543), which can't
+        # keep server-side prepared statements between transactions
+        prepare_threshold=None,
+        # Skip libpq's Kerberos (GSSAPI) attempt: on Windows it can stall the
+        # first connection for ~90 s, and Supabase doesn't use it anyway
+        gssencmode='disable',
     )
     # Set connection encoding to UTF-8
     conn.execute("SET CLIENT_ENCODING TO 'UTF8'")

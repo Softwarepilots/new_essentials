@@ -1,5 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+
+import '../screens/walkie_talkie_screen.dart';
+import 'auth_service.dart';
+
 /// Holds the destination when a push notification is tapped.
 class NotificationNavDestination {
   final int mainTab;    // admin dashboard bottom-nav index
@@ -14,12 +19,20 @@ class NotificationNavigationService {
   factory NotificationNavigationService() => _instance;
   NotificationNavigationService._internal();
 
+  /// The app's navigator, for opening screens from a notification tap.
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
   final _controller =
       StreamController<NotificationNavDestination>.broadcast();
 
   Stream<NotificationNavDestination> get stream => _controller.stream;
 
   void navigateTo(String type) {
+    if (type == 'walkie') {
+      _openWalkieTalkie();
+      return;
+    }
+
     // Main tab 2 = Notifications screen for all push types
     const mainTab = 2;
 
@@ -32,6 +45,17 @@ class NotificationNavigationService {
     _controller.add(
       NotificationNavDestination(mainTab: mainTab, subTab: subTab),
     );
+  }
+
+  Future<void> _openWalkieTalkie() async {
+    final user = await AuthService().getCurrentUser();
+    final navigator = navigatorKey.currentState;
+    if (user == null || navigator == null) return;
+    navigator.push(MaterialPageRoute(
+      builder: (_) => WalkieTalkieScreen(
+        isAdmin: user['role']?.toString().toLowerCase() == 'admin',
+      ),
+    ));
   }
 
   void dispose() => _controller.close();

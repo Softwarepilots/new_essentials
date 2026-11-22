@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'notification_service.dart';
 import 'notification_navigation_service.dart';
+import 'walkie_talkie_service.dart';
 
 // Must be top-level for Firebase background processing
 @pragma('vm:entry-point')
@@ -70,6 +71,12 @@ class PushNotificationService {
           requestSoundPermission: false,
         ),
       ),
+      // Tapping a voice-message banner shown while the app was open
+      onDidReceiveNotificationResponse: (response) {
+        if (response.payload == 'walkie') {
+          NotificationNavigationService().navigateTo('walkie');
+        }
+      },
     );
 
     // 5. Register FCM token with backend
@@ -120,6 +127,9 @@ class PushNotificationService {
   }
 
   Future<void> _onForegroundMessage(RemoteMessage message) async {
+    // Voice message: fetch it now so it plays straight away, walkie-talkie style
+    if (message.data['type'] == 'walkie') WalkieTalkieService.instance.onPush();
+
     final n = message.notification;
     if (n == null) return;
     await showLocalNotification(

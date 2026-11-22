@@ -3,7 +3,9 @@ Supervisor live location, shared with admins during working hours only.
 
     POST /api/location/update/                 supervisor: report current position
     POST /api/location/status/                 supervisor: sharing on/off (GPS off, permission removed, logged out)
-    GET  /api/admin/supervisor-locations/      admin: every supervisor + last position + sharing state
+    GET  /api/admin/supervisor-locations/      admin: every supervisor + last position + sharing state,
+                                               plus sites and each supervisor's nearest pinned site
+    POST/DELETE /api/admin/sites/<id>/location/  admin: pin / unpin where a site is on the map
 
 Only the latest position per supervisor is stored (no history). Updates sent
 outside working hours are refused and nothing is stored, so the working-hours
@@ -13,8 +15,10 @@ Sharing is mandatory during working hours; supervisors can't switch it off in
 the app, and admins get a push notification when a phone reports it stopped.
 
 Tables: supervisor_locations (migrations/supervisor_locations.sql),
-supervisor_location_status (migrations/supervisor_location_status.sql)
+supervisor_location_status (migrations/supervisor_location_status.sql),
+site pins in sites.latitude/longitude/location_radius_m (migrations/site_locations.sql)
 """
+import math
 import threading
 from datetime import datetime, timedelta
 
@@ -228,6 +232,9 @@ def admin_supervisor_locations(request):
             return Response({'error': 'Unauthorized. Admin access required.'},
                             status=status.HTTP_403_FORBIDDEN)
 
+        sites = _all_sites(cursor)
+        pinned = [s for s in sites if s['latitude'] is not None]
+
         cursor.execute("""
             SELECT u.id, u.full_name, u.username, u.phone,
                    l.latitude, l.longitude, l.accuracy_m, l.recorded_at,
@@ -264,17 +271,129 @@ def admin_supervisor_locations(request):
                 'status': state,
                 'off_reason': OFF_STATES[sharing_state] if turned_off else None,
                 'off_since': changed_at.isoformat() if turned_off else None,
+                # Closest pinned site, and whether they're inside its radius
+                'nearest_site': _nearest_site(lat, lng, pinned),
             })
 
         return Response({
             'success': True,
             'supervisors': supervisors,
+            'sites': sites,
             'working_hours_now': is_working_hours(now),
             'working_hours': f'Mon–Sat {WORK_START_HOUR:02d}:00–{WORK_END_HOUR:02d}:00 IST',
             'live_window_minutes': int(LIVE_WINDOW.total_seconds() // 60),
         })
     except Exception as e:
         print(f'Error listing supervisor locations: {e}')
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if conn:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Site pins (admin): where each site is, so the map can show who's at a site
+# Columns: sites.latitude/longitude/location_radius_m (migrations/site_locations.sql)
+# ---------------------------------------------------------------------------
+
+MIN_SITE_RADIUS_M = 25
+MAX_SITE_RADIUS_M = 2000
+
+
+def _distance_m(lat1, lng1, lat2, lng2) -> float:
+    """Great-circle distance in metres (haversine)."""
+    r = 6_371_000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _all_sites(cursor) -> list:
+    cursor.execute("""
+        SELECT id, site_name, customer_name, area, street,
+               latitude, longitude, location_radius_m, location_updated_at
+        FROM sites
+        ORDER BY area, street, site_name
+    """)
+    sites = []
+    for (sid, site_name, customer, area, street, lat, lng, radius, updated) in cursor.fetchall():
+        name = f'{customer} {site_name}'.strip() if customer else (site_name or 'Site')
+        sites.append({
+            'id': str(sid),
+            'name': name,
+            'area': area or '',
+            'street': street or '',
+            'latitude': lat,
+            'longitude': lng,
+            'radius_m': radius,
+            'location_updated_at': updated.isoformat() if updated else None,
+        })
+    return sites
+
+
+def _nearest_site(lat, lng, pinned_sites):
+    if lat is None or lng is None or not pinned_sites:
+        return None
+    best = min(pinned_sites, key=lambda s: _distance_m(lat, lng, s['latitude'], s['longitude']))
+    distance = _distance_m(lat, lng, best['latitude'], best['longitude'])
+    return {
+        'id': best['id'],
+        'name': best['name'],
+        'distance_m': round(distance),
+        'inside': distance <= best['radius_m'],
+    }
+
+
+@csrf_exempt
+@api_view(['POST', 'DELETE'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def admin_site_location(request, site_id):
+    """
+    POST   /api/admin/sites/<id>/location/   {"latitude", "longitude", "radius_m"?}  pin / move
+    DELETE /api/admin/sites/<id>/location/   remove the pin
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if _role_id(cursor, request.user.get('user_id')) != ADMIN_ROLE_ID:
+            return Response({'error': 'Unauthorized. Admin access required.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        if request.method == 'DELETE':
+            cursor.execute("""
+                UPDATE sites SET latitude = NULL, longitude = NULL, location_updated_at = NOW()
+                WHERE id = %s
+            """, (str(site_id),))
+        else:
+            try:
+                lat = float(request.data.get('latitude'))
+                lng = float(request.data.get('longitude'))
+                radius = int(request.data.get('radius_m') or 150)
+            except (TypeError, ValueError):
+                return Response({'error': 'latitude, longitude and radius_m must be numbers'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                return Response({'error': 'That is not a valid location'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if not MIN_SITE_RADIUS_M <= radius <= MAX_SITE_RADIUS_M:
+                return Response({'error': f'Radius must be {MIN_SITE_RADIUS_M}–{MAX_SITE_RADIUS_M} m'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            cursor.execute("""
+                UPDATE sites
+                SET latitude = %s, longitude = %s, location_radius_m = %s,
+                    location_updated_at = NOW()
+                WHERE id = %s
+            """, (lat, lng, radius, str(site_id)))
+
+        if cursor.rowcount == 0:
+            return Response({'error': 'Site not found'}, status=status.HTTP_404_NOT_FOUND)
+        conn.commit()
+        return Response({'success': True})
+    except Exception as e:
+        print(f'Error saving site location: {e}')
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:
         if conn:

@@ -14,6 +14,7 @@ import 'login_screen.dart';
 import 'site_engineer_site_detail_screen.dart';
 import 'site_engineer_reports_screen.dart';
 import 'edit_profile_screen.dart';
+import '../widgets/walkie_talkie_button.dart';
 
 class SiteEngineerDashboard extends StatefulWidget {
   final UserModel user;
@@ -168,6 +169,7 @@ class _SiteEngineerDashboardState extends State<SiteEngineerDashboard> {
             context,
             title: _getAppBarTitle(),
             actions: [
+              const WalkieTalkieButton(isAdmin: false, iconColor: AppColors.deepNavy),
               IconButton(
                 icon: const Icon(Icons.logout, color: AppColors.deepNavy),
                 onPressed: _logout,

@@ -12,6 +12,7 @@ from django.conf import settings
 from datetime import datetime, time
 from .authentication import JWTAuthentication
 from .database import execute_query, fetch_one, fetch_all, get_db_connection
+from .views_entry_edit import supervisor_site_extras
 import psycopg
 import uuid
 import pytz
@@ -2313,6 +2314,7 @@ def get_entries_by_date(request):
                 l.extra_cost,
                 l.extra_cost_notes,
                 l.submitted_by_role,
+                l.entry_type,
                 COALESCE(u.full_name, u.phone) as supervisor_name,
                 lsr.daily_rate,
                 (l.labour_count * COALESCE(lsr.daily_rate, 0)) AS total_cost
@@ -2371,8 +2373,28 @@ def get_entries_by_date(request):
         """, (site_id, entry_date))
         has_site_engineer_entry = site_engineer_check is not None
         site_engineer_name = site_engineer_check['supervisor_name'] if site_engineer_check else None
-        
+
+        # Supervisors also see (and can correct, same day) other supervisors'
+        # entries for this site. Kept in separate lists so the screen's
+        # own-entry logic (locks, session progress) is unchanged.
+        extras = {}
+        if user_role == 'Supervisor':
+            extras = supervisor_site_extras(
+                site_id, entry_date, user_id,
+                [e['id'] for e in labour_entries], [e['id'] for e in material_entries])
+        history = extras.get('edit_history', {})
+        own_edit_fields = lambda entry_id: {
+            'entered_by_me': True,
+            'can_edit': extras.get('can_edit', False),
+            **({'edit': history[str(entry_id)]} if str(entry_id) in history else {}),
+        }
+        for other in extras.get('other_labour_entries', []) + extras.get('other_material_entries', []):
+            if other['id'] in history:
+                other['edit'] = history[other['id']]
+
         return Response({
+            'other_labour_entries': extras.get('other_labour_entries', []),
+            'other_material_entries': extras.get('other_material_entries', []),
             'labour_entries': [
                 {
                     'id': str(e['id']),
@@ -2386,9 +2408,10 @@ def get_entries_by_date(request):
                     'extra_cost_notes': e.get('extra_cost_notes', ''),
                     'daily_rate': float(e['daily_rate']) if e.get('daily_rate') else None,
                     'total_cost': float(e['total_cost']) if e.get('total_cost') else None,
-                    'entry_type': e.get('entry_type', 'morning'),
+                    'entry_type': e.get('entry_type') or 'morning',
                     'submitted_by_role': e.get('submitted_by_role', ''),
                     'supervisor_name': e.get('supervisor_name', ''),
+                    **own_edit_fields(e['id']),
                 }
                 for e in labour_entries
             ],
@@ -2402,6 +2425,7 @@ def get_entries_by_date(request):
                     'updated_at': e['updated_at'].isoformat() if e['updated_at'] else None,
                     'extra_cost': float(e['extra_cost']) if e.get('extra_cost') else 0,
                     'extra_cost_notes': e.get('extra_cost_notes', ''),
+                    **own_edit_fields(e['id']),
                 }
                 for e in material_entries
             ],

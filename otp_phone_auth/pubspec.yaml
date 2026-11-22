@@ -82,6 +82,11 @@ dependencies:
   flutter_background_service: ^5.1.0
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
+  record: ^6.2.1
+  just_audio: ^0.10.6
+  cross_file: ^0.3.5+5
+  gal: ^2.3.3
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

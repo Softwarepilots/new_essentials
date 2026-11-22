@@ -15,6 +15,7 @@ import '../widgets/supervisor_material_usage_dialog.dart';
 import 'supervisor_reports_screen.dart';
 import '../services/cache_service.dart';
 import '../widgets/location_sharing_banner.dart';
+import '../widgets/walkie_talkie_button.dart';
 
 class SupervisorDashboardFeed extends StatefulWidget {
   const SupervisorDashboardFeed({super.key});
@@ -279,6 +280,7 @@ class _SupervisorDashboardFeedState extends State<SupervisorDashboardFeed> {
     return Scaffold(
       backgroundColor: BWColors.background,
       body: currentScreen,
+      floatingActionButton: const WalkieTalkieButton.fab(isAdmin: false),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1532,121 +1534,74 @@ class _SupervisorDashboardFeedState extends State<SupervisorDashboardFeed> {
     );
   }
 
-  Map<String, Map<String, List<Map<String, dynamic>>>> _groupBySitesByAreaAndStreet() {
-    final grouped = <String, Map<String, List<Map<String, dynamic>>>>{};
-    for (final site in _workingSites) {
-      final area = site['area']?.toString().trim().isNotEmpty == true
-          ? site['area'].toString()
-          : 'Unknown Area';
-      final street = site['street']?.toString().trim().isNotEmpty == true
-          ? site['street'].toString()
-          : 'Unknown Street';
-      grouped.putIfAbsent(area, () => {});
-      grouped[area]!.putIfAbsent(street, () => []);
-      grouped[area]![street]!.add(site);
-    }
-    return grouped;
-  }
+  /// Working sites as one flat list (no area / street sub-dropdowns),
+  /// sorted by area, street and name.
+  Widget _buildWorkingSitesList() {
+    String text(dynamic v) => v?.toString().trim() ?? '';
+    final sites = [..._workingSites]..sort((a, b) {
+        for (final key in ['area', 'street', 'site_name']) {
+          final c = text(a[key]).toLowerCase().compareTo(text(b[key]).toLowerCase());
+          if (c != 0) return c;
+        }
+        return 0;
+      });
 
-  Widget _buildGroupedWorkingSites() {
-    final grouped = _groupBySitesByAreaAndStreet();
-    return Column(
-      children: grouped.entries.map((areaEntry) {
-        final area = areaEntry.key;
-        final streets = areaEntry.value;
-        final totalSitesInArea = streets.values.fold(0, (sum, s) => sum + s.length);
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.symmetric(vertical: 4.h),
+      itemCount: sites.length,
+      separatorBuilder: (_, __) => Divider(height: 1, indent: 64.w, color: BWColors.primary.withOpacity(0.08)),
+      itemBuilder: (context, index) {
+        final site = sites[index];
+        final siteForDetail = {
+          'id': site['site_id'] ?? site['id'],
+          'display_name': site['display_name'] ?? site['site_name'],
+          'area': site['area'],
+          'street': site['street'],
+          'customer_name': site['customer_name'],
+          'site_name': site['site_name'],
+        };
+        final location = [text(site['area']), text(site['street'])]
+            .where((s) => s.isNotEmpty)
+            .join(' · ');
+        final description = text(site['description']);
 
-        return ExpansionTile(
-          tilePadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
+        return ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 2.h),
           leading: Container(
             padding: EdgeInsets.all(8.r),
             decoration: BoxDecoration(
-              color: BWColors.primary.withOpacity(0.15),
+              color: BWColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8.r),
             ),
-            child: Icon(Icons.location_city, color: BWColors.primary, size: 20.sp),
+            child: Icon(Icons.construction, color: BWColors.primary, size: 20.sp),
           ),
           title: Text(
-            area,
+            site['display_name'] ?? site['site_name'] ?? 'Unknown Site',
             style: TextStyle(
-              fontSize: 15.sp,
-              fontWeight: FontWeight.bold,
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w600,
               color: BWColors.primary,
             ),
           ),
           subtitle: Text(
-            '$totalSitesInArea ${totalSitesInArea == 1 ? 'site' : 'sites'} · ${streets.length} ${streets.length == 1 ? 'street' : 'streets'}',
+            [if (location.isNotEmpty) location, if (description.isNotEmpty) description].join('\n'),
             style: TextStyle(fontSize: 12.sp, color: BWColors.secondaryText),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          children: streets.entries.map((streetEntry) {
-            final street = streetEntry.key;
-            final sites = streetEntry.value;
-
-            return ExpansionTile(
-              tilePadding: EdgeInsets.only(left: 32.w, right: 16.w),
-              leading: Icon(Icons.route, color: BWColors.muted, size: 18.sp),
-              title: Text(
-                street,
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  fontWeight: FontWeight.w600,
-                  color: BWColors.primary,
-                ),
+          trailing: Icon(Icons.arrow_forward_ios, size: 14.sp, color: BWColors.muted),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SiteDetailScreen(site: siteForDetail),
               ),
-              subtitle: Text(
-                '${sites.length} ${sites.length == 1 ? 'site' : 'sites'}',
-                style: TextStyle(fontSize: 12.sp, color: BWColors.secondaryText),
-              ),
-              children: sites.map((site) {
-                final siteForDetail = {
-                  'id': site['site_id'] ?? site['id'],
-                  'display_name': site['display_name'] ?? site['site_name'],
-                  'area': site['area'],
-                  'street': site['street'],
-                  'customer_name': site['customer_name'],
-                  'site_name': site['site_name'],
-                };
-                return ListTile(
-                  contentPadding: EdgeInsets.only(left: 56.w, right: 16.w),
-                  leading: Container(
-                    padding: EdgeInsets.all(8.r),
-                    decoration: BoxDecoration(
-                      color: BWColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8.r),
-                    ),
-                    child: Icon(Icons.construction, color: BWColors.primary, size: 18.sp),
-                  ),
-                  title: Text(
-                    site['display_name'] ?? site['site_name'] ?? 'Unknown Site',
-                    style: TextStyle(
-                      fontSize: 14.sp,
-                      fontWeight: FontWeight.w600,
-                      color: BWColors.primary,
-                    ),
-                  ),
-                  subtitle: site['description'] != null && site['description'].toString().trim().isNotEmpty
-                      ? Text(
-                          site['description'],
-                          style: TextStyle(fontSize: 12.sp, color: BWColors.secondaryText),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      : null,
-                  trailing: Icon(Icons.arrow_forward_ios, size: 14.sp, color: BWColors.muted),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => SiteDetailScreen(site: siteForDetail),
-                      ),
-                    ).then((_) => _refreshAfterSiteDetail());
-                  },
-                );
-              }).toList(),
-            );
-          }).toList(),
+            ).then((_) => _refreshAfterSiteDetail());
+          },
         );
-      }).toList(),
+      },
     );
   }
 
@@ -1736,7 +1691,7 @@ class _SupervisorDashboardFeedState extends State<SupervisorDashboardFeed> {
                 ),
               )
             else
-              _buildGroupedWorkingSites(),
+              _buildWorkingSitesList(),
           ],
         ],
       ),

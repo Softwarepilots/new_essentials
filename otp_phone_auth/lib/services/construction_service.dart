@@ -12,8 +12,8 @@ class ConstructionService {
   ConstructionService._internal();
 
   final _authService = AuthService();
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
-  static const String mediaBaseUrl = 'http://192.168.1.6:8001'; // For media files
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
+  static const String mediaBaseUrl = 'http://192.168.1.10:8001'; // For media files
 
   // Helper method to convert relative image URLs to full URLs
   static String getFullImageUrl(String? relativeUrl) {
@@ -534,6 +534,34 @@ class ConstructionService {
     } catch (e) {
       print('Error getting entries by date: $e');
       return {'labour_entries': [], 'material_entries': []};
+    }
+  }
+
+  /// Corrects a same-day entry made by any supervisor at the site.
+  /// [kind] is 'labour' (new count) or 'material' (new quantity used).
+  /// Backend: api/views_entry_edit.py
+  Future<Map<String, dynamic>> editEntry({
+    required String kind,
+    required String entryId,
+    required num value,
+    String? reason,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/construction/entries/$kind/$entryId/edit/'),
+            headers: await _getHeaders(),
+            body: json.encode({
+              'value': value,
+              if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200) return {'success': true, ...data};
+      return {'success': false, 'error': data['error'] ?? 'Could not save the change'};
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
 

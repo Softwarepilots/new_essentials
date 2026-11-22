@@ -1311,6 +1311,11 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
                       else if (_todayEntries == null ||
                           (_todayEntries!['labour_entries']?.isEmpty ?? true) &&
                               (_todayEntries!['material_entries']?.isEmpty ??
+                                  true) &&
+                              (_todayEntries!['other_labour_entries']?.isEmpty ??
+                                  true) &&
+                              (_todayEntries!['other_material_entries']
+                                      ?.isEmpty ??
                                   true))
                         _buildEmptyState()
                       else
@@ -1457,25 +1462,25 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
     final Map<String, Map<String, List<Map<String, dynamic>>>> groupedEntries =
         {};
 
-    // Process labour entries
-    if (_todayEntries?['labour_entries'] != null) {
-      for (var entry in _todayEntries!['labour_entries']) {
+    // Process labour entries (mine, then other supervisors' at this site)
+    for (final key in ['labour_entries', 'other_labour_entries']) {
+      for (var entry in (_todayEntries?[key] as List?) ?? const []) {
         final date = entry['entry_date'] ?? _formatSelectedDate();
         if (!groupedEntries.containsKey(date)) {
           groupedEntries[date] = {'labour': [], 'material': []};
         }
-        groupedEntries[date]!['labour']!.add(entry);
+        groupedEntries[date]!['labour']!.add(Map<String, dynamic>.from(entry));
       }
     }
 
     // Process material entries
-    if (_todayEntries?['material_entries'] != null) {
-      for (var entry in _todayEntries!['material_entries']) {
+    for (final key in ['material_entries', 'other_material_entries']) {
+      for (var entry in (_todayEntries?[key] as List?) ?? const []) {
         final date = entry['entry_date'] ?? _formatSelectedDate();
         if (!groupedEntries.containsKey(date)) {
           groupedEntries[date] = {'labour': [], 'material': []};
         }
-        groupedEntries[date]!['material']!.add(entry);
+        groupedEntries[date]!['material']!.add(Map<String, dynamic>.from(entry));
       }
     }
 
@@ -1795,17 +1800,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
                     color: AppColors.textSecondary,
                   ),
                 ),
-                if (entry['entry_time'] != null) ...[
-                  SizedBox(height: 2.h),
-                  Text(
-                    'Time: ${entry['entry_time']}',
-                    style: TextStyle(
-                      fontSize: 11.sp,
-                      color: AppColors.textSecondary,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
+                ..._entryMeta(entry, isLabour: true),
               ],
             ),
           ),
@@ -1824,10 +1819,127 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               ),
             ),
           ),
+          if (entry['can_edit'] == true) _editButton(entry, isLabour: true),
         ],
       ),
     );
   }
+
+  /// Who entered it, when, and whether someone corrected it since.
+  List<Widget> _entryMeta(Map<String, dynamic> entry, {required bool isLabour}) {
+    final mine = entry['entered_by_me'] != false;
+    final name = (entry['supervisor_name'] ?? '').toString();
+    final parts = <String>[
+      if (isLabour)
+        (entry['entry_type'] ?? 'morning') == 'evening' ? 'Evening' : 'Morning',
+      mine ? 'by you' : 'by ${name.isEmpty ? 'another supervisor' : name}',
+      if (_formatEntryClock(entry) != null) _formatEntryClock(entry)!,
+    ];
+    final edit = entry['edit'] as Map?;
+    return [
+      SizedBox(height: 2.h),
+      Text(
+        parts.join(' · '),
+        style: TextStyle(fontSize: 11.sp, color: AppColors.textSecondary),
+      ),
+      if (edit != null) ...[
+        SizedBox(height: 3.h),
+        Row(
+          children: [
+            Icon(Icons.edit_note, size: 14.sp, color: Colors.orange.shade800),
+            SizedBox(width: 3.w),
+            Flexible(
+              child: Text(
+                'Edited by ${edit['edited_by_name']}'
+                '${edit['original_value'] != null ? ' · was ${edit['original_value']}' : ''}',
+                style: TextStyle(
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ];
+  }
+
+  String? _formatEntryClock(Map<String, dynamic> entry) {
+    final raw = entry['entry_time'] ?? entry['updated_at'];
+    final time = raw == null ? null : DateTime.tryParse(raw.toString());
+    if (time == null) return null;
+    // Timestamps with an offset parse as UTC: show them in IST, like the
+    // rest of the app. Ones without an offset are already IST wall-clock.
+    final ist = time.isUtc ? time.add(const Duration(hours: 5, minutes: 30)) : time;
+    return DateFormat('h:mm a').format(ist);
+  }
+
+  Widget _editButton(Map<String, dynamic> entry, {required bool isLabour}) {
+    return Padding(
+      padding: EdgeInsets.only(left: 4.w),
+      child: IconButton(
+        tooltip: 'Edit',
+        visualDensity: VisualDensity.compact,
+        icon: Icon(Icons.edit_outlined, size: 20.sp, color: AppColors.deepNavy),
+        onPressed: () => _editEntry(entry, isLabour: isLabour),
+      ),
+    );
+  }
+
+  /// Correct a same-day entry (any supervisor at this site). Saved with who
+  /// changed it and the old value; admins are notified.
+  Future<void> _editEntry(Map<String, dynamic> entry, {required bool isLabour}) async {
+    final current = isLabour
+        ? (entry['labour_count'] as num?) ?? 0
+        : (entry['quantity'] as num?) ?? 0;
+    final title = isLabour
+        ? '${entry['labour_type'] ?? 'Labour'} · '
+            '${(entry['entry_type'] ?? 'morning') == 'evening' ? 'Evening' : 'Morning'}'
+        : (entry['material_type'] ?? 'Material').toString();
+    final unit = isLabour ? 'workers' : (entry['unit'] ?? 'units').toString();
+    final enteredBy = entry['entered_by_me'] != false
+        ? null
+        : (entry['supervisor_name'] ?? 'another supervisor').toString();
+
+    final result = await showDialog<({num value, String reason})>(
+      context: context,
+      builder: (context) => _EditEntryDialog(
+        title: title,
+        unit: isLabour ? unit : '$unit used',
+        current: current,
+        wholeNumbers: isLabour,
+        enteredBy: enteredBy,
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final response = await _constructionService.editEntry(
+      kind: isLabour ? 'labour' : 'material',
+      entryId: entry['id'].toString(),
+      value: result.value,
+      reason: result.reason,
+    );
+    if (!mounted) return;
+    if (response['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(response['changed'] == false
+            ? 'No change — the value is the same'
+            : '✅ $title updated to ${_trimNumber(result.value)} $unit'),
+        backgroundColor: AppColors.statusCompleted,
+      ));
+      await _loadTodayEntries();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('❌ ${response['error']}'),
+        backgroundColor: AppColors.statusOverdue,
+        duration: const Duration(seconds: 5),
+      ));
+    }
+  }
+
+  String _trimNumber(num value) =>
+      value == value.roundToDouble() ? value.toInt().toString() : value.toString();
 
   Widget _buildMaterialCard(Map<String, dynamic> entry) {
     return Container(
@@ -1867,23 +1979,13 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
                 ),
                 SizedBox(height: 2.h),
                 Text(
-                  '${entry['quantity']} ${entry['unit'] ?? 'units'}',
+                  '${entry['quantity']} ${entry['unit'] ?? 'units'} used',
                   style: TextStyle(
                     fontSize: 13.sp,
                     color: AppColors.textSecondary,
                   ),
                 ),
-                if (entry['entry_time'] != null) ...[
-                  SizedBox(height: 2.h),
-                  Text(
-                    'Time: ${entry['entry_time']}',
-                    style: TextStyle(
-                      fontSize: 11.sp,
-                      color: AppColors.textSecondary,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
+                ..._entryMeta(entry, isLabour: false),
               ],
             ),
           ),
@@ -1895,6 +1997,7 @@ class _SiteDetailScreenState extends State<SiteDetailScreen> {
               color: AppColors.statusCompleted,
             ),
           ),
+          if (entry['can_edit'] == true) _editButton(entry, isLabour: false),
         ],
       ),
     );
@@ -5394,5 +5497,193 @@ class _ConfirmationDialog extends StatelessWidget {
       default:
         return Icons.inventory_2;
     }
+  }
+}
+
+/// Asks for the corrected count / quantity for one entry.
+/// Pops with (value, reason), or null when cancelled.
+class _EditEntryDialog extends StatefulWidget {
+  final String title;
+  final String unit;
+  final num current;
+  final bool wholeNumbers;
+  final String? enteredBy; // null when it's the user's own entry
+
+  const _EditEntryDialog({
+    required this.title,
+    required this.unit,
+    required this.current,
+    required this.wholeNumbers,
+    this.enteredBy,
+  });
+
+  @override
+  State<_EditEntryDialog> createState() => _EditEntryDialogState();
+}
+
+class _EditEntryDialogState extends State<_EditEntryDialog> {
+  late final TextEditingController _value = TextEditingController(text: _show(widget.current));
+  final _reason = TextEditingController();
+  String? _error;
+
+  String _show(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+  num? get _parsed {
+    final text = _value.text.trim();
+    return widget.wholeNumbers ? int.tryParse(text) : double.tryParse(text);
+  }
+
+  void _step(int delta) {
+    final next = ((_parsed ?? widget.current) + delta);
+    if (next < 0) return;
+    setState(() {
+      _value.text = _show(next);
+      _error = null;
+    });
+  }
+
+  void _save() {
+    final value = _parsed;
+    if (value == null) {
+      setState(() => _error = widget.wholeNumbers ? 'Enter a whole number' : 'Enter a number');
+      return;
+    }
+    if (value < 0) {
+      setState(() => _error = 'Cannot be negative');
+      return;
+    }
+    if (widget.wholeNumbers && value > 500) {
+      setState(() => _error = 'That looks too high (max 500)');
+      return;
+    }
+    Navigator.pop(context, (value: value, reason: _reason.text));
+  }
+
+  @override
+  void dispose() {
+    _value.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final changed = _parsed != null && _parsed != widget.current;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+      titlePadding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 4.h),
+      contentPadding: EdgeInsets.fromLTRB(20.w, 8.h, 20.w, 0),
+      title: Text(
+        'Edit ${widget.title}',
+        style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: AppColors.deepNavy),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.enteredBy != null)
+              Container(
+                width: double.infinity,
+                margin: EdgeInsets.only(bottom: 12.h),
+                padding: EdgeInsets.all(10.r),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(10.r),
+                ),
+                child: Text(
+                  'Entered by ${widget.enteredBy}. They and the admin will see '
+                  'that you changed it.',
+                  style: TextStyle(fontSize: 12.sp, color: Colors.orange.shade900),
+                ),
+              ),
+            Text(
+              'Now: ${_show(widget.current)} ${widget.unit}',
+              style: TextStyle(fontSize: 13.sp, color: AppColors.textSecondary),
+            ),
+            SizedBox(height: 10.h),
+            Row(
+              children: [
+                _StepButton(icon: Icons.remove, onTap: () => _step(-1)),
+                SizedBox(width: 10.w),
+                Expanded(
+                  child: TextField(
+                    controller: _value,
+                    autofocus: true,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.numberWithOptions(decimal: !widget.wholeNumbers),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        widget.wholeNumbers ? RegExp(r'\d') : RegExp(r'^\d*\.?\d{0,2}'),
+                      ),
+                    ],
+                    style: TextStyle(fontSize: 26.sp, fontWeight: FontWeight.bold, color: AppColors.deepNavy),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      errorText: _error,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
+                    ),
+                    onChanged: (_) => setState(() => _error = null),
+                    onSubmitted: (_) => _save(),
+                  ),
+                ),
+                SizedBox(width: 10.w),
+                _StepButton(icon: Icons.add, onTap: () => _step(1)),
+              ],
+            ),
+            SizedBox(height: 4.h),
+            Center(
+              child: Text(widget.unit, style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary)),
+            ),
+            SizedBox(height: 14.h),
+            TextField(
+              controller: _reason,
+              maxLength: 200,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                labelText: 'Reason (optional)',
+                hintText: 'e.g. 2 masons left early',
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.r)),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actionsPadding: EdgeInsets.fromLTRB(12.w, 0, 12.w, 12.h),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+        ),
+        FilledButton(
+          onPressed: changed ? _save : null,
+          style: FilledButton.styleFrom(backgroundColor: AppColors.deepNavy),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _StepButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.deepNavy.withValues(alpha: 0.08),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.all(10.r),
+          child: Icon(icon, color: AppColors.deepNavy, size: 22.sp),
+        ),
+      ),
+    );
   }
 }

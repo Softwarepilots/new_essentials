@@ -15,7 +15,7 @@ class SimpleBudgetScreen extends StatefulWidget {
 
 class _SimpleBudgetScreenState extends State<SimpleBudgetScreen> {
   final _authService = AuthService();
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
 
   // Cascading dropdown state
   String? _selectedArea;

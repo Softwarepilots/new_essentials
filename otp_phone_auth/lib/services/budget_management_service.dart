@@ -8,7 +8,7 @@ class BudgetManagementService {
   BudgetManagementService._internal();
 
   final _authService = AuthService();
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
 
   // Cache for global labour rates — loaded once, cleared when admin updates a rate
   static List<Map<String, dynamic>>? _globalRatesCache;

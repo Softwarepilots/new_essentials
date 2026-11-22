@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 /// check-in endpoint is unauthenticated; the backend stores the visit and
 /// pushes a notification to admin devices.
 class GuestApi {
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
 
   static Future<void> checkIn({
     required String name,

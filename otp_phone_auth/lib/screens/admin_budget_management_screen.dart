@@ -2729,7 +2729,7 @@ class _PhotoTabsSectionState extends State<PhotoTabsSection>
     final imageUrl = rawUrl.startsWith('http')
         ? rawUrl
         : rawUrl.isNotEmpty
-            ? 'http://192.168.1.6:8001$rawUrl'
+            ? 'http://192.168.1.10:8001$rawUrl'
             : '';
     final uploadDate = photo['upload_date'] ?? photo['update_date'] ?? '';
     final timeOfDay = photo['time_of_day'] ?? '';
@@ -2990,7 +2990,7 @@ class _AdminDocumentTabState extends State<_AdminDocumentTab> {
   Future<void> _openDocument(String fileUrl) async {
     final url = fileUrl.startsWith('http')
         ? fileUrl
-        : 'http://192.168.1.6:8001$fileUrl';
+        : 'http://192.168.1.10:8001$fileUrl';
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -3222,7 +3222,7 @@ class _AdminBillsTabState extends State<_AdminBillsTab>
 
   Future<void> _openDocument(String? fileUrl) async {
     if (fileUrl == null || fileUrl.isEmpty) return;
-    final url = fileUrl.startsWith('http') ? fileUrl : 'http://192.168.1.6:8001$fileUrl';
+    final url = fileUrl.startsWith('http') ? fileUrl : 'http://192.168.1.10:8001$fileUrl';
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

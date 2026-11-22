@@ -112,31 +112,6 @@ class _SupervisorPhotoUploadScreenState extends State<SupervisorPhotoUploadScree
     super.dispose();
   }
 
-  Future<void> _pickImages(bool isMorning) async {
-    try {
-      final List<XFile> images = await _picker.pickMultiImage();
-      
-      if (images.isNotEmpty) {
-        setState(() {
-          if (isMorning) {
-            _morningPhotos.addAll(images);
-          } else {
-            _eveningPhotos.addAll(images);
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error picking images: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _takePhoto(bool isMorning) async {
     try {
       final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
@@ -386,41 +361,23 @@ class _SupervisorPhotoUploadScreenState extends State<SupervisorPhotoUploadScree
           ),
           SizedBox(height: 16.h),
 
-          // Action Buttons
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: isUploading ? null : () => _takePhoto(isMorning),
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text('Take Photo'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.deepNavy,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: 14.h),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r),
-                    ),
-                  ),
+          // Camera only: site photos must be taken on the spot, not picked
+          // from the gallery
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: isUploading ? null : () => _takePhoto(isMorning),
+              icon: const Icon(Icons.camera_alt),
+              label: const Text('Take Photo'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.deepNavy,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(vertical: 14.h),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12.r),
                 ),
               ),
-              SizedBox(width: 12.w),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: isUploading ? null : () => _pickImages(isMorning),
-                  icon: const Icon(Icons.photo_library),
-                  label: const Text('Choose Photos'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.statusCompleted,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: 14.h),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
           SizedBox(height: 20.h),
 
@@ -602,7 +559,7 @@ class _SupervisorPhotoUploadScreenState extends State<SupervisorPhotoUploadScree
   Widget _buildUploadedPhotoThumbnail(Map<String, dynamic> photo) {
     final imageUrl = photo['image_url'].toString().startsWith('http')
         ? photo['image_url']
-        : 'http://192.168.1.6:8001${photo['image_url']}';
+        : 'http://192.168.1.10:8001${photo['image_url']}';
     
     final uploadDate = photo['upload_date'] ?? '';
     

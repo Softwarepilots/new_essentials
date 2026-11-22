@@ -23,6 +23,10 @@ import 'admin_manage_materials_screen.dart';
 import 'admin_catalogue_screen.dart';
 import 'admin_supervisor_locations_screen.dart';
 import '../widgets/nav_badge.dart';
+import '../widgets/walkie_talkie_button.dart';
+import '../utils/photo_download.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:intl/intl.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({Key? key}) : super(key: key);
@@ -405,6 +409,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         // ],
       ),
       body: _buildBody(),
+      floatingActionButton: const WalkieTalkieButton.fab(isAdmin: true),
       bottomNavigationBar: _buildBottomNav(),
     );
   }
@@ -3243,8 +3248,9 @@ class _AdminStoryTab extends StatefulWidget {
 
 class _AdminStoryTabState extends State<_AdminStoryTab> {
   final _service = ConstructionService();
-  static const _baseUrl = 'http://192.168.1.6:8001';
+  static const _baseUrl = 'http://192.168.1.10:8001';
   static const _kViewedKey = 'story_viewed_timestamps'; // SharedPreferences key
+  static const _storyWindow = Duration(days: 30); // how far back stories go
 
   // All photos grouped by site
   Map<String, List<Map<String, dynamic>>> _storiesBySite = {};
@@ -3293,10 +3299,15 @@ class _AdminStoryTabState extends State<_AdminStoryTab> {
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
     try {
-      // Step 1 — get all site IDs and accountant photos in parallel
+      // Step 1 — get all site IDs and accountant photos in parallel.
+      // That photo API returns at most 200, newest first; asking for just the
+      // story window keeps older photos from using them up.
+      final cutoff = DateTime.now().subtract(_storyWindow);
       final baseResults = await Future.wait([
         _service.getAllSites(),
-        _service.getAccountantPhotos(),
+        _service.getAccountantPhotos(
+          dateFrom: DateFormat('yyyy-MM-dd').format(cutoff),
+        ),
       ]);
 
       final allSites = List<Map<String, dynamic>>.from(
@@ -3338,8 +3349,7 @@ class _AdminStoryTabState extends State<_AdminStoryTab> {
         }
       }
 
-      // Step 4 — combine, keep only last 24 hours, sort newest-first, group by site
-      final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+      // Step 4 — combine, keep only the last 30 days, sort newest-first, group by site
       final allPhotos = [...rawSupervisor, ...rawAccountant].where((p) {
         final raw = ((p['update_date'] ?? p['upload_date']) as String?) ?? '';
         if (raw.isEmpty) return false;
@@ -3422,7 +3432,7 @@ class _AdminStoryTabState extends State<_AdminStoryTab> {
             const Text('No stories yet',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
             const SizedBox(height: 8),
-            Text('Supervisor site photos will appear here.',
+            Text('Site photos from the last 30 days will appear here.',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
           ],
         ),
@@ -3702,6 +3712,12 @@ class _SiteStoryRow extends StatelessWidget {
                     ],
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Download all $photoCount photos',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _downloadSiteStory(context, siteLabel, photos, fullUrl),
+                  icon: const Icon(Icons.download_rounded, color: Color(0xFF1A1A2E), size: 22),
+                ),
                 GestureDetector(
                   onTap: () => onTapPhoto(0),
                   child: Container(
@@ -3792,6 +3808,88 @@ class _SiteStoryRow extends StatelessWidget {
 // FULL-SCREEN STORY VIEWER  – Instagram-style
 // ═══════════════════════════════════════════════════════════════
 
+/// "Sudesh house 2026-11-22 Morning 3" — the saved file's name.
+String _storyPhotoName(Map<String, dynamic> photo, int index) {
+  final site = photo['full_site_name'] as String? ?? photo['site_name'] as String? ?? 'Site';
+  final raw = (photo['update_date'] ?? photo['upload_date']) as String? ?? '';
+  final date = raw.length >= 10 ? raw.substring(0, 10) : raw;
+  final tod = (photo['time_of_day'] as String? ?? '').toLowerCase();
+  final morning = photo['update_type'] == 'STARTED' || tod == 'morning';
+  return '$site $date ${morning ? 'Morning' : 'Evening'} ${index + 1}';
+}
+
+/// Saves every photo in a site's story, showing progress.
+Future<void> _downloadSiteStory(
+  BuildContext context,
+  String siteLabel,
+  List<Map<String, dynamic>> photos,
+  String Function(String?) fullUrl,
+) async {
+  final items = [
+    for (var i = 0; i < photos.length; i++)
+      if (fullUrl(photos[i]['image_url'] as String?).isNotEmpty)
+        (url: fullUrl(photos[i]['image_url'] as String?), name: _storyPhotoName(photos[i], i)),
+  ];
+  if (items.isEmpty) return;
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Download $siteLabel?'),
+      content: Text(kIsWeb
+          ? 'All ${items.length} photos will be downloaded to this computer.'
+          : 'All ${items.length} photos will be saved to your gallery '
+              '(album "${PhotoDownload.album}").'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1A1A2E)),
+          child: const Text('Download'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  final done = ValueNotifier<int>(0);
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: ValueListenableBuilder<int>(
+          valueListenable: done,
+          builder: (_, value, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(
+                value: value / items.length,
+                color: const Color(0xFF1A1A2E),
+                backgroundColor: const Color(0xFF1A1A2E).withValues(alpha: 0.1),
+              ),
+              const SizedBox(height: 14),
+              Text('Saving $value of ${items.length} photos…'),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  final saved = await PhotoDownload.saveAll(items, onProgress: (d, _) => done.value = d);
+  navigator.pop();
+  done.dispose();
+  messenger.showSnackBar(SnackBar(
+    content: Text(saved == items.length
+        ? '✅ Saved all $saved photos of $siteLabel'
+        : 'Saved $saved of ${items.length} photos — some could not be downloaded'),
+    backgroundColor: saved == items.length ? Colors.green.shade700 : Colors.orange.shade800,
+  ));
+}
+
 class _StoryViewer extends StatefulWidget {
   final List<Map<String, dynamic>> photos;
   final int startIndex;
@@ -3858,6 +3956,35 @@ class _StoryViewerState extends State<_StoryViewer>
     setState(() => _currentIndex = index);
     _pageController.jumpToPage(index);
     _startProgress();
+  }
+
+  bool _saving = false;
+
+  /// Saves the photo on screen (pauses the story while saving).
+  Future<void> _downloadCurrent() async {
+    final photo = widget.photos[_currentIndex];
+    final url = widget.fullUrl(photo['image_url'] as String?);
+    if (url.isEmpty) return;
+    _progressCtrl.stop();
+    setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await PhotoDownload.save(url, _storyPhotoName(photo, _currentIndex));
+      messenger.showSnackBar(SnackBar(
+        content: Text(kIsWeb ? 'Photo downloaded' : 'Photo saved to gallery (${PhotoDownload.album})'),
+        backgroundColor: Colors.green.shade700,
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Could not save: ${e.toString().replaceFirst('Exception: ', '')}'),
+        backgroundColor: Colors.red,
+      ));
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+        _progressCtrl.forward();
+      }
+    }
   }
 
   @override
@@ -4015,6 +4142,17 @@ class _StoryViewerState extends State<_StoryViewer>
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Download photo',
+                    onPressed: _saving ? null : _downloadCurrent,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                          )
+                        : const Icon(Icons.download_rounded, color: Colors.white, size: 26),
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),

@@ -2,6 +2,7 @@
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'location_tracking_service.dart';
+import 'walkie_talkie_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -9,7 +10,7 @@ class AuthService {
   AuthService._internal();
 
   // Django backend URL
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
   // Login does a password hash check plus several DB round trips to Supabase,
   // which can exceed 10 s on a busy machine.
   static const Duration requestTimeout = Duration(seconds: 30);
@@ -270,5 +271,6 @@ class AuthService {
     await clearAuthData();
     // Supervisor location sharing ends with the session
     await LocationTrackingService.stop();
+    WalkieTalkieService.instance.stop();
   }
 }

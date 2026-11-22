@@ -16,6 +16,8 @@ from . import views_client
 from . import views_notifications
 from . import views_catalogue
 from . import views_location
+from . import views_walkie
+from . import views_entry_edit
 from . import views_cash_and_salary
 
 # Import old working ViewSets
@@ -128,6 +130,14 @@ urlpatterns = [
     path('location/update/', views_location.update_location, name='location-update'),
     path('location/status/', views_location.report_sharing_status, name='location-status'),
     path('admin/supervisor-locations/', views_location.admin_supervisor_locations, name='admin-supervisor-locations'),
+    path('admin/sites/<uuid:site_id>/location/', views_location.admin_site_location, name='admin-site-location'),
+
+    # Walkie-talkie voice messages (admin -> all staff, staff -> admins)
+    path('walkie/messages/', views_walkie.walkie_messages, name='walkie-messages'),
+    path('walkie/messages/<uuid:message_id>/heard/', views_walkie.walkie_mark_heard, name='walkie-mark-heard'),
+
+    # Same-day correction of a labour/material entry by any supervisor at the site
+    path('construction/entries/<str:kind>/<uuid:entry_id>/edit/', views_entry_edit.edit_entry, name='edit-entry'),
     path('notifications/mark-all-read/', views_notifications.mark_all_notifications_read, name='mark-all-notifications-read'),
     path('notifications/', views_notifications.get_notifications, name='get-notifications'),
     path('notifications/<uuid:notification_id>/read/', views_notifications.mark_notification_read, name='mark-late-notification-read'),

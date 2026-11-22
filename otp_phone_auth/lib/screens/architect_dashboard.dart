@@ -14,6 +14,7 @@ import '../widgets/common_widgets.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 import 'edit_profile_screen.dart';
+import '../widgets/walkie_talkie_button.dart';
 
 class ArchitectDashboard extends StatefulWidget {
   final UserModel user;
@@ -187,6 +188,7 @@ class _ArchitectDashboardState extends State<ArchitectDashboard> {
     return Scaffold(
       backgroundColor: AppColors.lightSlate,
       body: _selectedIndex == 0 ? _buildSitesTab() : _buildProfileTab(),
+      floatingActionButton: const WalkieTalkieButton.fab(isAdmin: false),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
@@ -1558,7 +1560,7 @@ class _ArchitectHistoryScreenState extends State<ArchitectHistoryScreen> {
   Future<void> _openDocument(String fileUrl) async {
     final url = fileUrl.startsWith('http')
         ? fileUrl
-        : 'http://192.168.1.6:8001$fileUrl';
+        : 'http://192.168.1.10:8001$fileUrl';
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

@@ -11,10 +11,15 @@ class AdminSiteFullView extends StatefulWidget {
   final String siteId;
   final String siteName;
 
+  /// Tab to open on: 0 Dashboard, 1 Budget, 2 Labour, 3 Material, 4 Bills,
+  /// 5 Photos, 6 Documents.
+  final int initialTab;
+
   const AdminSiteFullView({
     super.key,
     required this.siteId,
     required this.siteName,
+    this.initialTab = 0,
   });
 
   @override
@@ -25,7 +30,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
     with SingleTickerProviderStateMixin {
   final _authService = AuthService();
   final _exportService = ExportService();
-  static const String baseUrl = 'http://192.168.1.6:8001/api';
+  static const String baseUrl = 'http://192.168.1.10:8001/api';
 
   late TabController _tabController;
 
@@ -59,7 +64,11 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(
+      length: 7,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 6),
+    );
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         _loadTabData(_tabController.index);
@@ -67,6 +76,8 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
     });
     _loadDashboardData();
     _loadLabourEntries();
+    // Opened straight on another tab: load its data too
+    if (widget.initialTab > 2) _loadTabData(widget.initialTab);
   }
 
   @override
@@ -1933,7 +1944,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
   }
 
   Widget _buildPhotoCard(Map<String, dynamic> photo) {
-    final imageUrl = 'http://192.168.1.6:8001${photo['image_url']}';
+    final imageUrl = 'http://192.168.1.10:8001${photo['image_url']}';
     final uploadDate =
         photo['upload_date'] ?? photo['update_date'] ?? photo['created_at'];
     String timeDisplay = '';
@@ -2365,7 +2376,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
       // Construct full URL
       final fullUrl = fileUrl.startsWith('http')
           ? fileUrl
-          : 'http://192.168.1.6:8001$fileUrl';
+          : 'http://192.168.1.10:8001$fileUrl';
 
       // Show loading dialog
       showDialog(

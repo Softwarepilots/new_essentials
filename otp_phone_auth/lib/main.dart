@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:provider/provider.dart';
 import 'services/push_notification_service.dart';
+import 'services/notification_navigation_service.dart';
 import 'services/location_tracking_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/supervisor_dashboard_feed.dart';
@@ -75,6 +76,7 @@ class MyApp extends StatelessWidget {
             minTextAdapt: true,
             splitScreenMode: true,
             builder: (_, __) => MaterialApp(
+              navigatorKey: NotificationNavigationService.navigatorKey,
               title: 'Essential Homes',
               theme: AppTheme.lightTheme,
               darkTheme: AppTheme.darkTheme,

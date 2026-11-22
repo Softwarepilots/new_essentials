@@ -18,6 +18,7 @@ import 'accountant_reports_screen.dart';
 import 'accountant_entry_screen.dart';
 import 'accountant_compare_screen.dart';
 import 'login_screen.dart';
+import '../widgets/walkie_talkie_button.dart';
 
 class AccountantDashboard extends StatefulWidget {
   final UserModel user;
@@ -609,6 +610,7 @@ class _AccountantDashboardState extends State<AccountantDashboard> {
         context,
         title: 'Dashboard - $_profileName',
         actions: [
+          const WalkieTalkieButton(isAdmin: false, iconColor: AppColors.deepNavy),
           // Mismatch Warning Icon
           if (_totalMismatches > 0)
             Padding(

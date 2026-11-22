@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../services/construction_service.dart';
 import '../services/cache_service.dart';
+import 'admin_labour_rates_screen.dart';
+import 'admin_site_full_view.dart';
 
 class AdminAllWorkingSitesScreen extends StatefulWidget {
   const AdminAllWorkingSitesScreen({super.key});
@@ -223,6 +225,14 @@ class _AdminAllWorkingSitesScreenState extends State<AdminAllWorkingSitesScreen>
         backgroundColor: const Color(0xFF1A1A2E),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.currency_rupee),
+            tooltip: 'Labour Rates',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminLabourRatesScreen()),
+            ),
+          ),
           IconButton(
             icon: Icon(_showFilters ? Icons.filter_alt : Icons.filter_alt_outlined),
             onPressed: () {
@@ -571,11 +581,13 @@ class _AdminAllWorkingSitesScreenState extends State<AdminAllWorkingSitesScreen>
               SizedBox(height: 12.h),
               Row(
                 children: [
+                  // Each badge opens the site on that tab
                   if (labourCount > 0) ...[
                     _buildCountBadge(
                       icon: Icons.people,
                       count: labourCount,
                       color: Colors.blue,
+                      onTap: () => _openSite(site, displayName, tab: 2),
                     ),
                     SizedBox(width: 8.w),
                   ],
@@ -584,6 +596,7 @@ class _AdminAllWorkingSitesScreenState extends State<AdminAllWorkingSitesScreen>
                       icon: Icons.inventory_2,
                       count: materialCount,
                       color: Colors.green,
+                      onTap: () => _openSite(site, displayName, tab: 3),
                     ),
                     SizedBox(width: 8.w),
                   ],
@@ -592,6 +605,7 @@ class _AdminAllWorkingSitesScreenState extends State<AdminAllWorkingSitesScreen>
                       icon: Icons.photo_camera,
                       count: photoCount,
                       color: Colors.orange,
+                      onTap: () => _openSite(site, displayName, tab: 5),
                     ),
                   ],
                 ],
@@ -617,9 +631,24 @@ class _AdminAllWorkingSitesScreenState extends State<AdminAllWorkingSitesScreen>
           ],
         ),
         trailing: Icon(Icons.arrow_forward_ios, size: 16.sp, color: const Color(0xFF6B7280)),
-        onTap: () {
-          // TODO: Navigate to site detail screen if needed
-        },
+        onTap: () => _openSite(site, displayName),
+      ),
+    );
+  }
+
+  /// Opens the site's full view, optionally on a tab (2 Labour, 3 Material,
+  /// 5 Photos — see AdminSiteFullView.initialTab).
+  void _openSite(Map<String, dynamic> site, String displayName, {int tab = 0}) {
+    final siteId = (site['id'] ?? site['site_id'])?.toString();
+    if (siteId == null || siteId.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminSiteFullView(
+          siteId: siteId,
+          siteName: displayName,
+          initialTab: tab,
+        ),
       ),
     );
   }
@@ -628,28 +657,33 @@ class _AdminAllWorkingSitesScreenState extends State<AdminAllWorkingSitesScreen>
     required IconData icon,
     required int count,
     required Color color,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6.r),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12.sp, color: color),
-          SizedBox(width: 4.w),
-          Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 12.sp,
-              fontWeight: FontWeight.bold,
-              color: color,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6.r),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6.r),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12.sp, color: color),
+            SizedBox(width: 4.w),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 12.sp,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

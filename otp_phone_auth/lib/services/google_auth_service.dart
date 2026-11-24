@@ -1,5 +1,6 @@
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'backend_service.dart';
 
 class GoogleAuthService {
@@ -11,7 +12,9 @@ class GoogleAuthService {
     scopes: ['email', 'profile'],
   );
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  // Lazy: FirebaseAuth.instance throws when Firebase is not initialised.
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  bool get _firebaseReady => Firebase.apps.isNotEmpty;
   final BackendService _backendService = BackendService();
 
   // Sign in with Google
@@ -95,15 +98,15 @@ class GoogleAuthService {
   // Sign out
   Future<void> signOut() async {
     await _googleSignIn.signOut();
-    await _auth.signOut();
+    if (_firebaseReady) await _auth.signOut();
     await _backendService.clearJwtToken();
   }
 
   // Get current user
-  User? get currentUser => _auth.currentUser;
+  User? get currentUser => _firebaseReady ? _auth.currentUser : null;
 
   // Check if user is signed in
   bool isSignedIn() {
-    return _auth.currentUser != null;
+    return currentUser != null;
   }
 }

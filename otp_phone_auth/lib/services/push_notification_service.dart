@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -36,7 +37,8 @@ class PushNotificationService {
 
   /// Call once after Firebase.initializeApp() — safe to call multiple times.
   Future<void> initialise() async {
-    if (_initialised || kIsWeb) return;
+    // Firebase is not configured in this app; skip FCM setup.
+    if (_initialised || kIsWeb || Firebase.apps.isEmpty) return;
     _initialised = true;
 
     // 1. Request permission (Android 13+ / iOS)

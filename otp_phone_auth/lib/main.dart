@@ -1,11 +1,6 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'firebase_options.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:provider/provider.dart';
-import 'services/push_notification_service.dart';
 import 'services/notification_navigation_service.dart';
 import 'services/location_tracking_service.dart';
 import 'screens/login_screen.dart';
@@ -34,12 +29,6 @@ import 'providers/client_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialise Firebase (mobile only — FCM not used on web)
-  if (!kIsWeb) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  }
 
   // Supervisor location sharing (mobile only; started from the supervisor dashboard)
   await LocationTrackingService.configure();

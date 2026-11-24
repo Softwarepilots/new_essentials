@@ -1,6 +1,7 @@
 ﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BackendService {
@@ -41,6 +42,7 @@ class BackendService {
   // Sign in with Firebase token and get JWT
   Future<Map<String, dynamic>?> signIn() async {
     try {
+      if (Firebase.apps.isEmpty) return null;
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         print('No Firebase user found');

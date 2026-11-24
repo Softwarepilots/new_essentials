@@ -3248,7 +3248,7 @@ class _AdminStoryTab extends StatefulWidget {
 
 class _AdminStoryTabState extends State<_AdminStoryTab> {
   final _service = ConstructionService();
-  static const _baseUrl = 'http://192.168.1.10:8001';
+  static const _baseUrl = 'http://187.127.164.22';
   static const _kViewedKey = 'story_viewed_timestamps'; // SharedPreferences key
   static const _storyWindow = Duration(days: 30); // how far back stories go
 

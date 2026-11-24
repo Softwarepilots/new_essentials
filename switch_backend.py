@@ -4,7 +4,7 @@ Point both Flutter apps (otp_phone_auth + guest_app) at a backend:
 
     python switch_backend.py local            # http://localhost:8001 (Chrome on this PC)
     python switch_backend.py lan 192.168.1.6  # this PC's Wi-Fi IP:8001 (phones on the same Wi-Fi)
-    python switch_backend.py server           # http://187.127.164.22:8000 (live server)
+    python switch_backend.py server           # http://187.127.164.22 (live server)
 
 Only the backend host is rewritten, so uncommitted edits in the same files
 are left alone. Every mode first converts back to the server form, so any
@@ -15,7 +15,7 @@ import pathlib
 import re
 import sys
 
-SERVER_API = 'http://187.127.164.22:8000'
+SERVER_API = 'http://187.127.164.22'
 SERVER_MEDIA = 'http://187.127.164.22'
 # Media/file URLs on the server have no port (served on :80), while the local
 # Django dev server serves everything on one port. They get a different local

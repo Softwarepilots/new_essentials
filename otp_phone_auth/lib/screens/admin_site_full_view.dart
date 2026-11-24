@@ -30,7 +30,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
     with SingleTickerProviderStateMixin {
   final _authService = AuthService();
   final _exportService = ExportService();
-  static const String baseUrl = 'http://192.168.1.10:8001/api';
+  static const String baseUrl = 'http://187.127.164.22/api';
 
   late TabController _tabController;
 
@@ -1944,7 +1944,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
   }
 
   Widget _buildPhotoCard(Map<String, dynamic> photo) {
-    final imageUrl = 'http://192.168.1.10:8001${photo['image_url']}';
+    final imageUrl = 'http://187.127.164.22${photo['image_url']}';
     final uploadDate =
         photo['upload_date'] ?? photo['update_date'] ?? photo['created_at'];
     String timeDisplay = '';
@@ -2376,7 +2376,7 @@ class _AdminSiteFullViewState extends State<AdminSiteFullView>
       // Construct full URL
       final fullUrl = fileUrl.startsWith('http')
           ? fileUrl
-          : 'http://192.168.1.10:8001$fileUrl';
+          : 'http://187.127.164.22$fileUrl';
 
       // Show loading dialog
       showDialog(

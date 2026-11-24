@@ -1560,7 +1560,7 @@ class _ArchitectHistoryScreenState extends State<ArchitectHistoryScreen> {
   Future<void> _openDocument(String fileUrl) async {
     final url = fileUrl.startsWith('http')
         ? fileUrl
-        : 'http://192.168.1.10:8001$fileUrl';
+        : 'http://187.127.164.22$fileUrl';
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

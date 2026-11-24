@@ -10,7 +10,7 @@ class AuthService {
   AuthService._internal();
 
   // Django backend URL
-  static const String baseUrl = 'http://192.168.1.10:8001/api';
+  static const String baseUrl = 'http://187.127.164.22/api';
   // Login does a password hash check plus several DB round trips to Supabase,
   // which can exceed 10 s on a busy machine.
   static const Duration requestTimeout = Duration(seconds: 30);
